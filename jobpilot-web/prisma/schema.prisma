@@ -1,0 +1,201 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                      String    @id @default(uuid())
+  email                   String    @unique
+  name                    String?
+  google_id               String?   @unique
+  preferred_roles         String[]
+  preferred_companies     String[]
+  location_preference     String?
+  work_type               String[]
+  salary_min              Int?
+  reminder_time           String?   // Store as "HH:mm"
+  reminder_timezone       String    @default("UTC")
+  subscription_tier       String    @default("free") // free, platform_fee, full_service
+  gemini_api_key_encrypted String?
+  refresh_token           String?   @db.Text
+  trial_ends_at           DateTime?
+  created_at              DateTime  @default(now())
+  updated_at              DateTime  @updatedAt
+
+  resumes                 Resume[]
+  jobs                    Job[]
+  applications            Application[]
+  contacts                Contact[]
+  reminders               Reminder[]
+  tracker_events          TrackerEvent[]
+  audit_logs              AuditLog[]
+  mock_interview_sessions MockInterviewSession[]
+}
+
+model Resume {
+  id                String   @id @default(uuid())
+  user_id           String
+  user              User     @relation(fields: [user_id], references: [id])
+  original_url      String
+  parsed_skills     Json?
+  parsed_experience Json?
+  parsed_education  Json?
+  parsed_personal_info Json?
+  gap_analysis      Json?
+  is_active         Boolean  @default(true)
+  created_at        DateTime @default(now())
+
+  applications      Application[]
+}
+
+model Job {
+  id               String   @id @default(uuid())
+  user_id          String
+  user             User     @relation(fields: [user_id], references: [id])
+  title            String
+  company          String
+  company_domain   String?
+  description      String?
+  apply_url        String?
+  linkedin_url     String?
+  easy_apply       Boolean  @default(false)
+  match_score      Int?
+  match_reason     String?
+  salary_range     String?
+  location         String?
+  is_ats_platform  Boolean  @default(false)
+  ats_platform     String?
+  source_platform  String?
+  status           String   @default("found")
+  tailored_result  Json?
+  found_at         DateTime @default(now())
+
+  applications     Application[]
+  contacts         Contact[]
+  reminders        Reminder[]
+}
+
+enum ApplicationStatus {
+  found
+  reminded
+  applied
+  responded
+  no_response
+  interview_scheduled
+  interview_done
+  offered
+  rejected
+  withdrawn
+}
+
+model Application {
+  id                   String            @id @default(uuid())
+  user_id              String
+  user                 User              @relation(fields: [user_id], references: [id])
+  job_id               String
+  job                  Job               @relation(fields: [job_id], references: [id])
+  resume_id            String
+  resume               Resume            @relation(fields: [resume_id], references: [id])
+  tailored_resume_url  String?
+  cover_letter         String?
+  status               ApplicationStatus @default(found)
+  applied_at           DateTime?
+  response_received_at DateTime?
+  follow_up_sent_at     DateTime?
+  notes                String?
+  is_deleted           Boolean           @default(false)
+  created_at           DateTime          @default(now())
+  updated_at           DateTime          @updatedAt
+
+  interview_preps      InterviewPrep[]
+  mock_interview_sessions MockInterviewSession[]
+  reminders            Reminder[]
+  tracker_events       TrackerEvent[]
+}
+
+model Contact {
+  id                 String   @id @default(uuid())
+  job_id             String
+  job                Job      @relation(fields: [job_id], references: [id])
+  user_id            String
+  user               User     @relation(fields: [user_id], references: [id])
+  name               String?
+  linkedin_url       String?
+  title              String?
+  is_existing_contact Boolean  @default(false)
+  outreach_status    String   @default("not_contacted") // not_contacted, messaged, replied
+  created_at         DateTime @default(now())
+}
+
+model InterviewPrep {
+  id                 String      @id @default(uuid())
+  application_id     String
+  application        Application @relation(fields: [application_id], references: [id])
+  interview_date     DateTime?
+  interview_format   String?     // phone, video, onsite, technical
+  calendar_event_id  String?
+  company_brief      String?
+  questions          Json?
+  prep_email_sent_at DateTime?
+  debrief_notes      String?
+  created_at         DateTime    @default(now())
+}
+
+model MockInterviewSession {
+  id                String      @id @default(uuid())
+  application_id    String
+  application       Application @relation(fields: [application_id], references: [id])
+  user_id           String
+  user              User        @relation(fields: [user_id], references: [id])
+  questions_asked   Json?
+  answers_evaluated Json?
+  overall_score     Int?
+  strengths         String[]
+  improvements      String[]
+  completed_at      DateTime?
+  created_at        DateTime    @default(now())
+}
+
+model Reminder {
+  id                String      @id @default(uuid())
+  user_id           String
+  user              User        @relation(fields: [user_id], references: [id])
+  job_id            String?
+  job               Job?        @relation(fields: [job_id], references: [id])
+  application_id    String?
+  application       Application? @relation(fields: [application_id], references: [id])
+  type              String      // apply_reminder, follow_up, interview_prep, interview_day
+  scheduled_at      DateTime
+  sent_at           DateTime?
+  retry_count       Int         @default(0)
+  calendar_event_id String?
+  gmail_message_id  String?
+  created_at        DateTime    @default(now())
+}
+
+model TrackerEvent {
+  id             String      @id @default(uuid())
+  user_id        String
+  user           User        @relation(fields: [user_id], references: [id])
+  application_id String
+  application    Application @relation(fields: [application_id], references: [id])
+  email_subject  String?
+  email_from     String?
+  classification String?     // human, auto, interview, rejection
+  processed_at   DateTime    @default(now())
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  user_id     String
+  user        User     @relation(fields: [user_id], references: [id])
+  action      String
+  entity_type String
+  entity_id   String
+  metadata    Json?
+  created_at  DateTime @default(now())
+}

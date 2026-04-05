@@ -1,0 +1,1797 @@
+JobPilot
+AI-Powered Job Hunt Companion
+Product Requirements Document
+v1.0 · March 2026
+
+
+Document Info
+Value
+Product Name
+JobPilot — AI-Powered Job Hunt Companion
+Version
+1.0 (Hackathon MVP)
+Date
+March 2026
+Author
+Aman Kumar
+Status
+Active Development
+Target Launch
+Hackathon Submission
+Next Phase
+Commercial launch post-hackathon
+
+Table of Contents
+
+
+
+1. Executive Summary
+JobPilot is a multi-agent AI system that automates the entire job search lifecycle — from resume upload to interview preparation. It is designed for job seekers who waste hours weekly on manual job searching, resume tailoring, and application tracking with little structure or feedback.
+
+Mission Statement
+To give every job seeker an unfair advantage by automating the repetitive parts of job hunting so they can focus on what matters: preparing for interviews and making human connections.
+
+1.1 Problem Statement
+Problem
+Impact
+JobPilot Solution
+Manual job searching across multiple portals
+3-5 hrs/week wasted
+Automated multi-source job search agent
+Resume not tailored per JD — low ATS scores
+70%+ applications never reviewed
+AI resume tailoring per job, ATS score optimisation
+No structured application tracking
+Missed follow-ups, forgotten applications
+Full Kanban pipeline with status tracking
+Unknown follow-up strategy — ATS black holes
+Effort wasted on dead-end follow-ups
+Smart ATS detection, LinkedIn-first follow-up logic
+No referral connections utilised
+Cold applications have <5% response rate
+Network scan + LinkedIn referral contact finder
+Interview prep is ad-hoc and inconsistent
+Poor interview performance
+Auto-generated prep guide + mock interview agent
+
+1.2 Target Users
+User Segment
+Description
+Primary Pain
+Active job seekers
+People actively applying to 5-20 jobs/week
+Time spent on repetitive tasks
+Passive job seekers
+Employed but open to better opportunities
+Finding relevant jobs without active daily searching
+Fresh graduates
+Students entering job market for first time
+No network, no resume tailoring experience
+Career switchers
+Changing industries or roles
+Resume doesn't match new field JDs
+International candidates
+Applying in unfamiliar markets
+No local network for referrals
+
+2. Product Overview & Feature Map
+2.1 Core Modules
+Module
+Priority
+Description
+Phase
+User Auth & Onboarding
+P0
+Google OAuth, profile setup, resume upload
+MVP
+Resume Parser & Career Gap Analysis
+P0
+PDF parsing, skill extraction, market gap analysis
+MVP
+Job Search Agent
+P0
+Automated job discovery, scoring, ranking
+MVP
+Triple Attack Package
+P0
+Apply link + LinkedIn contacts + Easy Apply per job
+MVP
+Resume Tailoring Agent
+P0
+ATS-optimised resume per JD
+MVP
+Cover Letter Generator
+P0
+Personalised cover letter using company research
+MVP
+Application Tracker Dashboard
+P0
+Kanban pipeline, status management, analytics
+MVP
+Reminder & Notification System
+P0
+Gmail reminders, Calendar scheduling, user-approved timing
+MVP
+Email Monitor & Smart Follow-Up
+P1
+Gmail inbox scan, ATS detection, follow-up logic
+MVP
+Interview Detection & Calendar
+P1
+Parse interview invites, auto-Calendar events
+MVP
+Interview Prep Agent
+P1
+Company research, question generation, prep email
+MVP
+Mock Interview Agent
+P2
+Multi-turn chat mock, answer evaluation, feedback
+Phase 2
+Post-Interview Debrief
+P2
+Outcome logging, strategy adjustment
+Phase 2
+Billing & Subscription
+P1
+Freemium + Platform Fee + Full Service tiers
+MVP (basic)
+Multi-LLM Support
+P2
+Add OpenAI GPT, Claude alongside Gemini
+Phase 2
+
+2.2 User Journey Overview
+Step
+User Action
+System Action
+Agent Involved
+1
+Sign up with Google
+Create user record, request Gmail+Calendar OAuth scopes
+—
+2
+Upload resume PDF
+Parse PDF, extract profile, run gap analysis
+Resume Agent
+3
+Set preferences
+Store roles, companies, location, salary, reminder time
+Coordinator
+4
+Request job search
+Search web for matches, score and rank
+Job Search Agent
+5
+View job cards
+Show triple attack: apply URL + LinkedIn contacts + Easy Apply
+Outreach Agent
+6
+Approve reminder time
+Schedule Gmail + Calendar reminder for each job
+Scheduler
+7
+Receive reminder email
+Email with tailored resume attached + links
+Tracker Agent
+8
+Apply to job
+User applies externally, marks as applied in dashboard
+User action
+9
+Agent monitors Gmail
+Detect replies: human/auto/interview/rejection
+Tracker Agent
+10
+Interview invite detected
+Create Calendar event, trigger prep guide generation
+Interview Agent
+11
+Receive prep email
+Company brief + questions + tips 24h before interview
+Interview Agent
+12
+Post-interview
+Log outcome, receive debrief, strategy adjusted
+Debrief Agent
+
+3. Authentication & Onboarding
+3.1 Google OAuth Sign-In
+Functional Requirements
+	•	User signs in exclusively via Google OAuth (no email/password auth in v1)
+	•	NextAuth.js v5 handles the OAuth flow
+	•	Required OAuth scopes must be requested on first sign-in:
+	•	openid, profile, email — basic identity
+	•	https://www.googleapis.com/auth/gmail.readonly — read inbox for replies/invites
+	•	https://www.googleapis.com/auth/gmail.send — send reminders and prep guides
+	•	https://www.googleapis.com/auth/calendar.events — create interview/reminder events
+	•	https://www.googleapis.com/auth/contacts.readonly — check existing contacts for referrals
+	•	Access token and refresh token stored encrypted in NextAuth JWT session
+	•	Token refresh handled automatically by NextAuth before expiry
+	•	If user revokes Google access: detect on next API call, prompt re-auth with clear message
+	•	First-time users redirected to /onboarding after sign-in
+	•	Returning users redirected to /dashboard
+
+UI Requirements
+	•	Sign-in page: centered card layout, JobPilot logo at top, single 'Continue with Google' button (44px height min), brief value proposition below button
+	•	Google button: use official Google branding (white button, Google logo, 'Continue with Google' text) — do NOT use custom styling that violates Google brand guidelines
+	•	Loading state: spinner inside button, button disabled, text changes to 'Signing in...'
+	•	Error state: red inline error message below button — e.g. 'Sign-in failed. Please try again.'
+	•	Page must have descriptive <title>: 'Sign In — JobPilot'
+	•	No other navigation links on sign-in page except Privacy Policy and Terms of Service in footer
+	•	Mobile: same card but full-width on screens < 480px
+
+Accessibility Requirements (WCAG 2.1 AA)
+	•	Google button must have aria-label='Sign in with Google'
+	•	Loading state: aria-busy='true' on button, aria-label changes to 'Signing in, please wait'
+	•	Error message: role='alert' and aria-live='polite' so screen readers announce it
+	•	Page must have proper <h1> heading: 'Welcome to JobPilot'
+	•	Focus must be on the sign-in button on page load
+	•	Color contrast: all text must meet WCAG 4.5:1 minimum ratio
+
+Testing Criteria
+	•	Click 'Continue with Google' — Google consent screen appears with all required scopes listed
+	•	Complete Google auth — user is created in database with correct email/name
+	•	First-time user is redirected to /onboarding
+	•	Returning user is redirected to /dashboard
+	•	Revoke Google access in Google Account settings — next page load shows 're-authenticate' prompt
+	•	Token expires — refresh happens silently without user seeing a sign-in prompt
+	•	Sign-in page loads in < 2 seconds on 3G connection
+	•	Screen reader announces the sign-in button and error states correctly
+
+3.2 Onboarding Flow (4-Step Wizard)
+Step 1 — Resume Upload
+	•	User uploads PDF or DOCX resume (max 5MB)
+	•	File validated client-side: type (pdf/docx only), size (< 5MB)
+	•	Progress indicator shows upload + parse status
+	•	File uploaded to Google Cloud Storage, URL stored in DB
+	•	Resume Agent triggered automatically after upload
+	•	Parsed data shown as preview: skills list, experience count, education
+	•	User can re-upload if parse looks incorrect
+	•	Step cannot be skipped — resume is required
+
+UI Requirements
+	•	Step 1 of 4 progress indicator at top (pill steps, current = filled, others = outlined)
+	•	Large drag-and-drop zone (dashed border, 200px min-height): 'Drag your resume here or click to browse'
+	•	Accepted formats shown below zone: 'PDF or DOCX, max 5MB'
+	•	Upload progress bar while uploading
+	•	Parse progress: spinner with text 'Reading your resume...'
+	•	Success state: green checkmark, filename shown, 'Looks good!' message
+	•	Preview card below: shows extracted skills as chips, job count, years of experience
+	•	Re-upload button available after successful parse
+	•	'Next' button enabled only after successful parse
+	•	Error state: red border on zone, error message with specific reason (file too large / wrong format)
+
+Step 2 — Job Preferences
+	•	Target roles: multi-tag input, user types role names, autocomplete from common list
+	•	Target companies: multi-tag input, type company names; option to toggle 'Open to any company'
+	•	Location: text input with autocomplete; include 'Remote' as option
+	•	Work type: checkbox group — Remote / Hybrid / On-site (multi-select)
+	•	Salary expectation: min salary number input with currency selector (INR/USD default based on location)
+	•	Experience level: dropdown — Entry / Mid / Senior / Lead / Principal
+	•	All fields optional except at least one target role OR 'Open to any company' toggled
+
+Step 3 — Reminder Preferences
+	•	Preferred reminder time: time picker — what time should JobPilot email job reminders?
+	•	Reminder timezone: auto-detected from browser, user can change
+	•	Reminder frequency: daily / every 2 days / weekly toggle
+	•	Preview shown: 'You'll receive job reminders at 8:00 PM IST daily'
+
+Step 4 — Billing Plan Selection
+	•	Three cards displayed: Free / Platform Fee (API key required) / Full Service
+	•	Free tier: 5 job searches/day, 2 tailored resumes/day, basic tracking — no payment
+	•	Platform Fee tier: user provides own Gemini API key, platform charges small monthly fee, unlimited AI calls
+	•	Full Service tier: platform provides API key, higher monthly fee, no API key needed
+	•	'Start Free' pre-selected by default
+	•	Platform Fee and Full Service marked as 'Coming Soon' with join waitlist option
+	•	User can skip billing — free tier auto-selected
+
+Testing Criteria
+	•	Upload valid PDF resume — parse succeeds and shows extracted data within 10 seconds
+	•	Upload file > 5MB — client-side error shown before upload starts
+	•	Upload .jpg file — error: 'Only PDF and DOCX files are accepted'
+	•	Complete all 4 steps — user record updated with all preferences in DB
+	•	Skip Step 2 without selecting a role or toggling 'open to any' — Next button stays disabled
+	•	Onboarding can be re-accessed from Settings to update preferences
+	•	Step progress persists if user refreshes page mid-onboarding (session storage)
+	•	Timezone auto-detected correctly for IST (India), can be changed manually
+
+4. Resume Agent
+4.1 Resume Parsing
+Functional Requirements
+	•	Accept PDF and DOCX resume files
+	•	Extract using PyPDF2 for PDF, python-docx for DOCX
+	•	Pass extracted text to Vertex AI Gemini with structured extraction prompt
+	•	Return structured JSON: skills[], experience[{title,company,duration,bullets[]}], education[{degree,institution,year}], certifications[], languages[]
+	•	Handle multi-page resumes (up to 10 pages)
+	•	Handle various resume formats: chronological, functional, hybrid, ATS-friendly
+	•	If extraction confidence < 70%: flag for manual review, show user what was found
+	•	Store raw text AND structured JSON in database
+	•	Parsing must complete within 15 seconds
+
+4.2 Career Gap Analysis
+	•	Run immediately after resume parsing
+	•	Web Search MCP: query '[target role] required skills 2026 job market'
+	•	Gemini compares user skills vs market demand
+	•	Output: {strong_for: string[], stretch_for: string[], weak_for: string[], missing_skills: [{skill, importance: 'critical'|'important'|'nice_to_have'}]}
+	•	Store in resumes.gap_analysis JSONB column
+	•	Display on dashboard as insight card — not blocking
+
+4.3 Resume Tailoring
+	•	Triggered per job application
+	•	Input: user's base resume text + target JD text
+	•	Gemini prompt: extract JD keywords, rewrite resume bullets to mirror language, promote matching skills, adjust summary
+	•	ATS score calculated: keyword overlap percentage
+	•	If ATS score < 70%: iterate up to 3 times
+	•	Max 3 iterations regardless — prevent infinite loops
+	•	Save tailored PDF to GCS — one per job application
+	•	Store GCS URL in applications.tailored_resume_url
+	•	Tailoring must complete within 30 seconds
+
+UI Requirements
+	•	Resume section on profile page: shows current resume filename, upload date, parsed skills as coloured chips
+	•	Career gap card: traffic-light system — green chips = strong skills, amber = gap skills, red chips = missing critical skills
+	•	Gap analysis has 'Improve' button next to each missing skill — links to Coursera/Google learning resources
+	•	Tailored resume download button on each job card — shows ATS score as percentage badge (green ≥ 70%, amber 50-69%, red < 50%)
+	•	Resume preview modal: shows tailored resume text with keywords highlighted in yellow
+	•	Loading skeleton while tailoring is in progress — do not block UI
+	•	Re-tailor button available if user updates resume or wants a fresh version
+
+Accessibility Requirements (WCAG 2.1 AA)
+	•	All resume file inputs must have visible label and aria-label
+	•	Skill chips must have role='listitem' and be keyboard-navigable
+	•	ATS score badge: aria-label='ATS match score 78 percent'
+	•	Loading states must announce to screen readers: aria-live='polite' on status container
+	•	File upload drag zone: must work with keyboard (Enter/Space to open file picker)
+	•	Career gap chart: provide text alternative for all visual indicators
+
+Performance & Core Web Vitals Requirements
+	•	Resume parse + gap analysis: total < 15 seconds (P95)
+	•	Resume tailoring per job: < 30 seconds (P95)
+	•	PDF file upload: show progress bar for files > 500KB
+	•	GCS upload: use signed upload URLs — never proxy large files through backend
+	•	Cache gap analysis results for 24 hours — do not re-run on every page load
+
+Testing Criteria
+	•	Upload standard chronological PDF resume — all sections correctly extracted
+	•	Upload DOCX resume — parsing works correctly
+	•	Upload resume with no skills section — graceful fallback to text extraction
+	•	ATS tailoring for a React developer job with Python-focused resume — React keywords added, score improves to ≥ 70%
+	•	Tailoring completes in < 30 seconds for a 2-page resume
+	•	GCS URL is accessible via signed URL (expires after 24h for download, refreshed on request)
+	•	Career gap analysis shows different results for 'Frontend Developer' vs 'Data Scientist' roles
+	•	Uploading a 4.9MB PDF completes successfully
+	•	Uploading a 5.1MB file is rejected client-side with clear error
+	•	Re-uploading a new resume replaces the old one and re-runs gap analysis
+
+5. Job Search Agent
+5.1 Job Discovery
+Functional Requirements
+	•	Web Search MCP used to find job listings across: LinkedIn, Indeed, company career pages, Glassdoor
+	•	Search queries constructed from user profile: role + location + experience level
+	•	If target companies specified: search those first, then broaden
+	•	Minimum 10 jobs returned per search; maximum 50
+	•	Each job record must contain: title, company, company_domain, jd_summary, apply_url, salary_range (if available), location, posted_date (if available), source_platform
+	•	Detect if job is on an ATS platform (Greenhouse, Workday, Lever, iCIMS, Taleo, SmartRecruiters) — store in jobs.is_ats_platform and jobs.ats_platform
+	•	Deduplicate: same job from multiple sources = one record (match on company + title)
+	•	Cache search results in Upstash Redis — TTL: 2 hours
+	•	Search runs maximum once every 30 minutes per user to avoid rate limiting
+	•	Store all jobs in DB with status 'found'
+
+5.2 Job Scoring & Ranking
+	•	Each job scored 0-100 by Gemini against user's resume + preferences
+	•	Scoring factors: skill match (40pts), seniority match (20pts), salary fit (20pts), location preference (10pts), company preference (10pts)
+	•	Jobs scored < 40 are hidden by default (accessible via 'Show all' filter)
+	•	Jobs sorted by score descending on dashboard
+	•	Score stored in jobs.match_score — recalculated if user updates resume
+
+UI Requirements
+	•	Job search is triggered from dashboard — 'Find New Jobs' button
+	•	Loading state: animated cards (skeleton) showing search in progress, with status text: 'Searching for [Role] jobs...'
+	•	Each job card shows: company name, job title, match score badge (colour-coded), location, salary range, 'days ago' posted, source platform logo
+	•	Match score badge: green (80-100) = 'Strong Match', amber (60-79) = 'Good Match', gray (40-59) = 'Partial Match'
+	•	Filter bar: filter by score range, location, company, ATS platform, date posted
+	•	Sort options: Best Match / Newest / Company A-Z
+	•	Search status bar: '23 jobs found · Last searched 2 hours ago · Refresh'
+	•	Empty state: illustration + 'No jobs found. Try broadening your search criteria.' with Settings link
+	•	Pagination: load more button (not infinite scroll — better for accessibility and performance)
+
+Accessibility Requirements (WCAG 2.1 AA)
+	•	Job cards must be keyboard-navigable — Tab to each card, Enter to expand/view detail
+	•	Match score badge: aria-label='Match score: 85 out of 100, Strong Match'
+	•	Filter controls: all labels visible and associated with inputs
+	•	Loading state: aria-busy='true' on job list container, aria-live='polite' for status updates
+	•	Empty state: role='status' on empty state container
+	•	Sort/filter changes should announce results count to screen readers: 'Showing 15 of 23 jobs'
+
+Performance & Core Web Vitals Requirements
+	•	Job search (10-20 results): complete within 20 seconds (P95)
+	•	Job scoring for 20 jobs: complete within 10 seconds (P95)
+	•	Job list initial render: < 1 second using cached DB results
+	•	Images (company logos): lazy-loaded, WebP format, max 40x40px
+	•	Job cards use virtualisation if > 50 items — do not render all DOM nodes
+	•	Redis cache hit: return results in < 200ms
+
+Testing Criteria
+	•	Search for 'Frontend Developer' in 'Bangalore' — returns ≥ 10 relevant results
+	•	Same search within 30 minutes returns cached results without hitting web search
+	•	Job with Greenhouse apply URL has is_ats_platform=true, ats_platform='greenhouse'
+	•	Duplicate job from LinkedIn and Indeed — only one record created in DB
+	•	Job score for a perfect-match job is ≥ 80
+	•	Job score for a mismatched job (e.g. Python role for a React developer) is ≤ 40
+	•	Filter by 'Remote only' — only remote jobs shown
+	•	Salary filter 'INR 10L - 20L' — only matching salary range jobs shown
+	•	Search with no target companies — broad search returns mixed companies
+	•	Search with target companies set — those companies appear first in results
+
+6. Triple Attack Package & Outreach Agent
+6.1 Direct Apply Link
+	•	Find the exact application form URL — not just the careers homepage
+	•	Verify URL is accessible (HTTP GET check — status 200 or 301)
+	•	If URL check fails: fall back to careers page URL with note 'Direct link unavailable — search careers page'
+	•	Store verified apply_url in jobs table
+
+6.2 LinkedIn Referral Contacts
+	•	Web Search MCP: query 'site:linkedin.com/in [company name] [department/function]'
+	•	Extract 2-3 LinkedIn profile URLs from search results
+	•	Store in contacts table: name (if extractable), linkedin_url, title, company
+	•	Each contact card shows: name (if found), LinkedIn URL as clickable link, title at company
+	•	Include pre-written referral request message template user can copy
+	•	Referral message template: 'Hi [Name], I noticed you work at [Company]. I am applying for the [Role] position and would appreciate a referral. I have [X years] experience in [key skill]. Happy to share my resume — would this be possible?'
+
+6.3 LinkedIn Easy Apply
+	•	Web Search MCP: check if job is posted on LinkedIn with Easy Apply
+	•	If found: store linkedin_url and set easy_apply=true in jobs table
+	•	Show as third option on job card: 'Apply via LinkedIn Easy Apply'
+
+6.4 Existing Network Check
+	•	Gmail MCP: scan user's contacts for emails matching the company domain
+	•	Match logic: extract domain from jobs.company_domain, search contacts for @company_domain emails
+	•	If match found: create contact record with is_existing_contact=true
+	•	Show prominently on job card: 'You know someone at [Company]! Ask for a referral.' with contact name if available
+	•	This check runs once per job when job card is first viewed
+
+UI Requirements
+	•	Job detail page has three distinct CTA sections in a card:
+	•	Section 1 — Direct Apply: primary blue button 'Apply on [Company] website →', shows company domain
+	•	Section 2 — Get a Referral: lists 2-3 LinkedIn contact cards, each with avatar placeholder, name/title, 'View on LinkedIn' button; copy-paste referral message below
+	•	Section 3 — LinkedIn Easy Apply: secondary button 'Apply via LinkedIn Easy Apply' (shown only if available)
+	•	Network match alert (if existing contact found): amber banner at top of job detail: '⭐ You already know someone at this company — ask them for a referral first!'
+	•	All external links open in new tab with rel='noopener noreferrer'
+	•	Referral message: textarea (pre-filled, editable), 'Copy Message' button with copy-to-clipboard feedback
+	•	Mobile: sections stack vertically, buttons are full width
+
+Accessibility Requirements (WCAG 2.1 AA)
+	•	All external links include aria-label describing destination: aria-label='Apply for [Role] on [Company] website, opens in new tab'
+	•	Referral message copy button: aria-label='Copy referral message to clipboard', announce success: 'Copied!'
+	•	LinkedIn contact cards: role='article' with aria-label='LinkedIn contact at [Company]'
+	•	Network match alert: role='alert' so screen readers announce it immediately
+
+Testing Criteria
+	•	Job at Google — direct apply URL points to Google's careers application form, not just careers.google.com homepage
+	•	Job at Greenhouse-hosted company — apply URL is verified and accessible
+	•	Job with inaccessible URL — fallback message shown: 'Search careers page directly'
+	•	LinkedIn contacts found for 'Meta, Software Engineer' — 2-3 profile URLs extracted
+	•	Company with unusual domain (e.g. mckinsey.com) — correct domain used for network check
+	•	User has gmail contact with @google.com email, applies to Google job — network match shown
+	•	Referral message template copies to clipboard successfully
+	•	Easy Apply job shows third option; non-Easy-Apply job does not show that section
+
+7. Cover Letter Generator
+Functional Requirements
+	•	Triggered automatically when a job is added to 'To Apply' status
+	•	Outreach Agent runs web search for: company overview, recent news (last 3 months), product/service, culture, mission statement
+	•	Gemini generates cover letter with:
+	•	Opening paragraph: hook referencing specific company news or achievement
+	•	Body: 2 paragraphs connecting user's experience directly to JD requirements
+	•	Closing: specific enthusiasm for the role and clear call to action
+	•	Cover letter must NOT be a generic template — company-specific content required
+	•	Word count: 250-350 words
+	•	Stored in applications.cover_letter (TEXT column)
+	•	User can edit the generated cover letter inline before it is used
+	•	Regenerate button available — uses different angle on same research
+	•	Download as PDF or copy as plain text
+
+UI Requirements
+	•	Cover letter appears on job detail page under 'Your Application' section
+	•	Editable textarea showing the generated cover letter — clearly marked as AI-generated
+	•	'Edit' button toggles read-only to edit mode
+	•	'Regenerate' button with spinner — replaces current content after confirmation dialog
+	•	Character/word count shown below textarea
+	•	Download PDF and Copy Text buttons side-by-side
+	•	Small 'What sources were used?' expandable section showing company research sources
+	•	Diff view available: 'What changed?' shows differences between original and edited version
+
+Testing Criteria
+	•	Cover letter for Google Cloud job mentions Google Cloud specifically, not just 'Google'
+	•	Cover letter references at least one piece of recent company news
+	•	Word count is between 250 and 350 words
+	•	Regenerated cover letter is meaningfully different from the first version
+	•	User edits cover letter — changes are saved on blur (auto-save)
+	•	PDF download produces a clean, readable single-page cover letter
+	•	Cover letter generation completes within 20 seconds
+
+8. Application Tracker Dashboard
+8.1 Dashboard Overview Page (/dashboard)
+Functional Requirements
+	•	Main landing page after sign-in for returning users
+	•	Shows summary stats at top: total jobs found, total applied, total interviews, total offers
+	•	Kanban board below stats: columns for each application status
+	•	Activity feed on right side (desktop): recent actions by agents
+	•	Quick actions: 'Find New Jobs' button, 'Upload New Resume' button
+
+UI Requirements
+	•	Layout: full-width header with JobPilot logo + user avatar + settings; sidebar navigation (desktop) or bottom nav (mobile)
+	•	Stats bar: 4 metric cards in a row — 'Jobs Found', 'Applied', 'Interviews', 'Offers' — each with a number and trend arrow
+	•	Kanban board takes remaining viewport height — horizontally scrollable on desktop, swipeable columns on mobile
+	•	Each Kanban column has: column title, count badge, add button (for manual entry), list of job cards
+	•	Job card in Kanban: company logo (favicon), company name, job title, match score badge, days in current status, quick action button (context-aware per status)
+	•	Activity feed (desktop right panel, 280px): timestamped list of recent agent actions — 'Job Search Agent found 12 new jobs', 'Tracker Agent detected interview invite from Stripe'
+	•	Sticky header bar: does not scroll away — user always sees nav and quick actions
+	•	Empty state for each column: illustrated empty state with relevant message — e.g. 'No interviews yet. Keep applying!' for Interview column
+
+8.2 Kanban Pipeline Columns
+Column
+Status Value
+Card Quick Action
+Trigger to Move Here
+Found
+found
+View Details / Dismiss
+Job Search Agent discovers job
+Reminded
+reminded
+Mark Applied / Snooze
+Reminder email sent
+Applied
+applied
+Add Note / Mark Responded
+User manually marks applied
+Responded
+responded
+View Email / Schedule Interview
+Tracker Agent detects human reply
+Interview Scheduled
+interview_scheduled
+View Prep / Start Mock
+Interview invite detected
+Interview Done
+interview_done
+Log Outcome
+User marks interview complete
+Offer
+offered
+Accept / Decline / Negotiate
+User logs offer received
+Rejected
+rejected
+Apply Similar / Archive
+User logs rejection or auto-detected
+Withdrawn
+withdrawn
+Archive
+User withdraws application
+
+8.3 Job Application Detail Page (/applications/[id])
+Functional Requirements
+	•	Full timeline of all status changes with timestamps
+	•	All agent actions logged: when resume was tailored, when reminder sent, when prep email sent
+	•	View tailored resume (inline preview or download)
+	•	View and edit cover letter
+	•	Contact notes: user can add free-text notes about the company/role/contacts
+	•	Follow-up history: when follow-ups were sent (or skipped and why)
+	•	Interview details (if scheduled): date, time, format, interviewer name, Calendar link
+	•	Prep guide view: see generated questions and company research
+	•	Status change buttons: user can manually update status at any point
+
+UI Requirements
+	•	Two-column layout (desktop): left 60% = main content, right 40% = sidebar with contacts + timeline
+	•	Header: company logo (large), company name, job title, current status badge
+	•	Timeline in sidebar: vertical timeline with icons for each event — upload icon for resume tailor, envelope icon for emails, calendar icon for events
+	•	Status stepper at top: visual breadcrumb showing journey: Found → Reminded → Applied → ... → Outcome
+	•	Quick status update buttons: contextual to current status — e.g. 'Mark as Applied' if currently 'Reminded'
+	•	Notes textarea: auto-saves on blur, shows 'Saved' confirmation
+	•	Mobile: single column, sidebar becomes bottom sheet
+
+Accessibility Requirements (WCAG 2.1 AA)
+	•	Kanban columns: role='group' with aria-label='[Status] applications: [count] items'
+	•	Job cards: role='article', keyboard-moveable between columns using arrow keys
+	•	Status change: confirm dialog with focus trap before completing action
+	•	Timeline: role='list' with each event as role='listitem'
+	•	All icons must have aria-label or adjacent visible text — do not use icon-only buttons without labels
+	•	Dashboard stats: aria-live='polite' — update announcement when new jobs are found
+	•	Keyboard shortcut to add new job: documented in Help section
+
+Performance & Core Web Vitals Requirements
+	•	Dashboard initial load: LCP < 2.5 seconds (Core Web Vital target)
+	•	Time to Interactive: < 3.5 seconds on 4G connection
+	•	Cumulative Layout Shift: < 0.1 (no layout shift after load)
+	•	Kanban board renders with skeleton cards first — real data fills in without reflow
+	•	Application detail page: < 1.5 seconds to load (all data from single DB query)
+	•	Stats bar uses stale-while-revalidate — shows cached numbers instantly, updates in background
+	•	Kanban virtualisation: only render visible cards + 2 buffer rows — never render all cards in DOM
+	•	Activity feed: lazy-loaded, not blocking dashboard render
+
+Testing Criteria
+	•	Dashboard loads with skeleton state first, then populates within 2.5 seconds
+	•	Stats bar shows correct counts matching DB records
+	•	Moving job card from 'Applied' to 'Responded' updates DB status and creates timeline entry
+	•	Application detail shows full timeline in chronological order
+	•	Kanban drag-and-drop works on desktop (mouse) and touch (mobile)
+	•	Filter by 'Interview Scheduled' shows only those cards
+	•	Empty Kanban column shows correct illustrated empty state
+	•	Adding a note auto-saves within 1 second of finishing typing
+	•	Dashboard accessible via keyboard only — all actions reachable with Tab + Enter
+	•	Dashboard CLS score measured ≤ 0.1 in Lighthouse audit
+
+9. Reminder & Notification System
+9.1 Reminder Types & Triggers
+Type
+Trigger
+Channel
+Content
+User Approval Required
+apply_reminder
+Job found + tailored + user-approved time reached
+Gmail + Calendar
+Email: apply link, tailored resume attached, LinkedIn contacts. Calendar: event at reminder time.
+Yes — user sets daily time in onboarding
+follow_up_draft
+7 days after 'applied', no reply, NOT an ATS platform
+Gmail (draft, not auto-send)
+Draft follow-up email shown to user for approval before send
+Yes — user approves each follow-up
+interview_prep
+24 hours before interview_date
+Gmail
+Full prep guide: company brief, 15-20 questions, tips
+No — auto-sent
+interview_day
+2 hours before interview_date
+Gmail
+Quick reminder: who, where/link, format
+No — auto-sent
+no_apply_nudge
+3 days after reminder sent, job still in 'Reminded' status
+In-app notification + Gmail
+'Did you get a chance to apply? Deadline may be approaching.'
+No — auto-sent
+
+9.2 Scheduler Architecture
+	•	Cloud Run Job (separate from main agent service) runs every 30 minutes via Cloud Scheduler
+	•	Query: SELECT * FROM reminders WHERE scheduled_at <= NOW() AND sent_at IS NULL
+	•	For each due reminder: call FastAPI /agent/send-reminder endpoint
+	•	On success: set sent_at timestamp in DB
+	•	On failure: increment retry_count, schedule retry in 15 minutes
+	•	Maximum 3 retries — after 3 failures, mark as failed, send in-app alert to user
+	•	Reminder preferences stored in users table: reminder_time, reminder_timezone, reminder_frequency
+	•	User can pause all reminders from Settings
+
+UI Requirements
+	•	Settings page — Notifications section: toggle for each reminder type on/off
+	•	Time picker for daily reminder time (12h format with AM/PM)
+	•	Timezone selector (searchable dropdown with IST pre-selected for India)
+	•	Frequency selector: Daily / Every 2 days / Weekly
+	•	Preview text: 'You will receive job application reminders at 8:00 PM IST, Daily'
+	•	In-app notification bell icon in header: shows unread count badge
+	•	Notification dropdown: list of recent notifications, click to navigate to relevant job
+	•	Follow-up drafts appear in a dedicated 'Pending Actions' section on dashboard — amber highlight
+	•	Email reminders: use clean, mobile-responsive HTML email template — JobPilot branding, clear CTA buttons
+
+Testing Criteria
+	•	Set reminder time to 9:00 PM IST — reminder email arrives within 5 minutes of 9:00 PM IST
+	•	Apply reminder email contains: correct job title, working apply link, tailored resume as PDF attachment
+	•	Calendar event created in user's Google Calendar at reminder time with correct job details
+	•	Follow-up draft NOT sent automatically — appears in 'Pending Actions' for user approval
+	•	Interview prep email sent exactly 24h before interview with correct company research and questions
+	•	Pause all reminders from Settings — no emails sent for 24h after pausing
+	•	Failed reminder retried up to 3 times, then in-app alert shown
+	•	Email renders correctly on Gmail mobile (iPhone), Gmail desktop, Outlook
+	•	Unsubscribe link in every email (CAN-SPAM compliance) — unsubscribe stores preference in DB
+
+10. Email Monitor & Smart Follow-Up Agent
+10.1 Gmail Monitoring
+	•	Tracker Agent runs every 6 hours (scheduled) AND on-demand when user clicks 'Check for Updates'
+	•	Gmail MCP: fetch emails since last_checked timestamp from applied company domains
+	•	Company domains extracted from jobs.company_domain
+	•	For each email: Gemini classifies as: auto_reply | human_reply | interview_invite | rejection | other
+	•	Update last_checked timestamp in users table after each scan
+	•	Create tracker_events DB record for each email processed
+
+10.2 ATS & Auto-Reply Detection
+Signal
+Detection Method
+Action
+ATS platform sender
+Sender domain in list: greenhouse.io, workday.com, lever.co, icims.com, taleo.net, smartrecruiters.com, recruitee.com
+Log as ats_auto_reply, skip email follow-up, suggest LinkedIn outreach
+Generic no-reply
+Sender matches pattern: noreply@, no-reply@, donotreply@, careers@, recruiting@
+Log as auto_reply, skip email follow-up
+Human reply
+Sender is a personal company email (not matching auto-reply patterns)
+Update status to 'responded', notify user, enable follow-up
+Interview invite
+Email content classification by Gemini — keywords: interview, schedule, availability, call, meet, next steps
+Update status to interview_scheduled, trigger Interview Agent
+Rejection
+Content classification — keywords: not moving forward, other candidates, position filled, regret
+Update status to rejected, trigger debrief prompt
+
+10.3 Smart Follow-Up Logic
+	•	Follow-up eligibility check: applied_at + 7 days, status still 'applied', NOT an ATS platform
+	•	If eligible: create follow_up_draft record, show in 'Pending Actions' dashboard section
+	•	Follow-up draft template: professional, concise, references specific role and application date
+	•	User must explicitly approve before follow-up is sent
+	•	After user approval: Gmail MCP sends the email, stores gmail_message_id
+	•	Maximum 1 follow-up per application — no repeated follow-up after the first
+	•	If company is ATS-platform: instead of email, show LinkedIn outreach suggestion
+
+Testing Criteria
+	•	Email from greenhouse.io classified as ats_auto_reply — no follow-up generated
+	•	Email from john.smith@google.com classified as human_reply — status updated to responded
+	•	Email with 'schedule an interview' classified as interview_invite — Interview Agent triggered
+	•	Email with 'we have decided to move forward with other candidates' classified as rejection
+	•	7 days after applying to non-ATS job with no reply — follow-up draft appears in Pending Actions
+	•	ATS job (Greenhouse) after 7 days — LinkedIn suggestion appears instead of email follow-up
+	•	User approves follow-up — email sent via Gmail, sent_at recorded in DB
+	•	User rejects follow-up — draft deleted, no email sent
+	•	Duplicate email detection — same email scanned twice does not create duplicate records
+	•	Gmail scan completes within 30 seconds for inbox with 500 emails
+
+11. Interview Detection, Prep & Mock Interview
+11.1 Interview Detection
+	•	Triggered when Tracker Agent classifies email as interview_invite
+	•	Gemini extracts from email: interview_date (datetime), interview_format (phone/video/onsite/technical), interviewer_name (if mentioned), platform_link (Zoom/Meet/Teams URL if present)
+	•	Update application status to interview_scheduled
+	•	Create interview_preps record in DB
+	•	Create Google Calendar event via Calendar MCP:
+	•	Title: '[Company] Interview — [Role]'
+	•	Time: extracted interview_date
+	•	Description: role, format, platform link, JobPilot prep guide link
+	•	Add reminder: 24h before (prep email trigger) and 30min before (day-of reminder)
+
+11.2 Interview Prep Generation
+	•	Triggered automatically after interview_scheduled status
+	•	Web Search MCP researches: company background, recent news (6 months), Glassdoor review summary, product/service description, company values/mission
+	•	Gemini generates 15-20 interview questions categorised:
+	•	Technical (5-7): based on JD technical requirements + user's skill gaps
+	•	Behavioural (4-5): STAR-format questions based on role seniority
+	•	Situational (3-4): problem-solving scenarios relevant to the role
+	•	Company-specific (2-3): based on company research — culture, products, recent news
+	•	Each question includes: answer tips and a 'model answer outline'
+	•	Prep guide email sent via Gmail 24h before interview — clean HTML template
+	•	All data stored in interview_preps table
+
+11.3 Mock Interview Agent (Phase 2)
+	•	User manually triggers mock interview from interview prep page
+	•	Multi-turn conversation via chat interface
+	•	Agent asks one question at a time — waits for user response
+	•	After each answer: scores on relevance (0-10), specificity (0-10), structure (0-10), clarity (0-10)
+	•	Feedback after each answer: 1 strength, 1 improvement, model answer outline
+	•	Session summary after all questions: overall score, top 3 strengths, top 3 improvements, recommended practice areas
+	•	Store session results in mock_interview_sessions DB table
+
+11.4 Post-Interview Debrief (Phase 2)
+	•	Triggered 2 hours after interview_date — system prompts user: 'How did your interview go?'
+	•	User logs: outcome (positive/neutral/negative), general notes
+	•	Gemini analyses all rejection notes across all applications — identifies patterns
+	•	If 3+ rejections: generate strategic insight — 'You are getting rejected at the technical screen stage — focus on algorithm practice'
+	•	Store debrief in interview_preps.debrief_notes
+
+UI Requirements
+	•	Interview prep page (/interview/[id]): header with company name, interview date countdown ('Interview in 2 days, 4 hours'), format badge
+	•	Company brief section: collapsible card with company overview, recent news links, Glassdoor summary
+	•	Questions section: categorised tabs (Technical / Behavioural / Situational / Company) — each question as expandable card with tips and model answer
+	•	Mock interview button: prominent CTA 'Practice with AI Mock Interview' (Phase 2)
+	•	Prep guide download button: PDF version of full prep guide
+	•	Calendar link: 'Add to Calendar' button (opens Google Calendar event)
+	•	Post-interview section (after interview_date): 'Log your interview outcome' card
+	•	Mock interview chat UI: clean chat bubbles, agent avatar, user avatar, question displayed prominently, answer textarea below
+	•	After each answer: feedback card slides in with score and tips
+	•	Session end: summary card with circular score graphic and categorised feedback
+
+Testing Criteria
+	•	Email with 'interview on Thursday 15th at 2pm via Google Meet' — correct date/time extracted and Calendar event created
+	•	Interview prep generates ≥ 15 questions across all 4 categories
+	•	Company brief contains actual company-specific content (not generic placeholder)
+	•	Prep email received exactly 24 hours before interview_date
+	•	Calendar event has correct title, description and reminder set
+	•	Mock interview session: answer submitted — feedback received within 5 seconds
+	•	Mock session completes all questions — session summary generated with overall score
+	•	3 consecutive rejections — strategic insight appears on dashboard
+	•	Post-interview debrief prompt appears 2h after interview_date
+	•	Prep guide PDF downloads and is readable on mobile
+
+12. Billing & Subscription
+12.1 Pricing Tiers
+Feature
+Free
+Platform Fee (BYO API Key)
+Full Service
+Enterprise
+Price
+₹0 / $0
+₹149/mo or $2.99/mo
+₹499/mo or $9.99/mo
+Custom
+Job searches/day
+5
+Unlimited
+Unlimited
+Unlimited
+Resume tailoring/day
+2
+Unlimited
+Unlimited
+Unlimited
+Active job trackings
+20
+Unlimited
+Unlimited
+Unlimited
+AI Model
+Gemini (limited)
+User's own Gemini API key
+Gemini via platform key
+GPT-4 / Claude / Gemini
+Cover letter generation
+2/day
+Unlimited
+Unlimited
+Unlimited
+Email monitoring
+Manual only
+Every 6h automated
+Every 2h automated
+Real-time
+Interview prep
+Basic (5 questions)
+Full (20 questions)
+Full + Mock Interview
+Full + Mock + Coaching
+Mock interview (Phase 2)
+Not included
+Not included
+Included
+Included
+Priority support
+No
+Email
+Email + Chat
+Dedicated
+API key required
+No
+Yes (user provides)
+No
+No
+Phase
+MVP
+MVP
+Post-MVP
+Phase 3
+
+12.2 Platform Fee Tier — BYO API Key (MVP)
+Functional Requirements
+	•	User provides their own Google Gemini API key in Settings
+	•	API key stored encrypted in DB (AES-256 encryption at rest)
+	•	API key validated on save: make a test call with 1 token, check for valid response
+	•	If API key invalid: show specific error from Google API (invalid key / quota exceeded / billing not enabled)
+	•	Platform charges monthly subscription fee for access to the JobPilot platform and agent infrastructure
+	•	All AI calls route through user's own key — platform never pays for user's AI usage
+	•	If user's API key quota is exceeded: pause AI features, show 'Your API quota is exceeded — check your Google AI Studio dashboard'
+	•	User can remove API key at any time — immediately downgrades to Free tier
+
+12.3 Full Service Tier (Post-MVP)
+Functional Requirements
+	•	Platform provides Gemini API access — user does not need their own key
+	•	Platform key managed centrally — usage tracked per user
+	•	Rate limiting: per-user daily token budget enforced to prevent abuse
+	•	User's monthly fee covers platform infrastructure + AI costs + margin
+	•	This tier can be enabled after validating cost model — see Section 12.5
+
+12.4 Multi-LLM Support (Phase 2)
+Provider
+Model
+Integration
+BYO Key Support
+Notes
+Google
+Gemini 1.5 Pro
+Vertex AI SDK
+Yes (MVP)
+Default model — hackathon sponsor
+Google
+Gemini 2.0 Flash
+Vertex AI SDK
+Yes
+Faster, cheaper option
+OpenAI
+GPT-4o
+OpenAI SDK
+Yes (Phase 2)
+User provides OpenAI API key
+Anthropic
+Claude 3.5 Sonnet
+Anthropic SDK
+Yes (Phase 2)
+User provides Anthropic API key
+Ollama (local)
+Llama 3, Mistral
+REST API
+Yes (Phase 2)
+Privacy-conscious users — runs on their machine
+	•	Model selection in Settings: user picks which model to use for each agent type
+	•	Same structured prompt schema used for all models — responses normalised before processing
+	•	Model adapter pattern (see Architecture document): adding new model = writing one adapter class
+
+12.5 Cost Analysis
+Platform Cost per User per Month
+Cost Item
+Free User
+Platform Fee User
+Full Service User
+Notes
+Gemini API (job search, scoring)
+~$0.02 (minimal)
+$0 (user's key)
+~$0.80-1.20
+~40 job searches/searches
+Gemini API (resume tailoring)
+~$0.05 (2/day limit)
+$0 (user's key)
+~$1.50-2.50
+~30 tailoring ops/month
+Gemini API (cover letters)
+~$0.02
+$0 (user's key)
+~$0.50-0.80
+~20 cover letters/month
+Gemini API (interview prep)
+~$0.03
+$0 (user's key)
+~$0.30-0.50
+~3 interview preps/month
+Google Cloud Run
+~$0.01
+~$0.01
+~$0.01
+Shared infrastructure
+Neon DB
+~$0.01
+~$0.01
+~$0.01
+Shared DB
+GCS Storage
+~$0.001
+~$0.001
+~$0.001
+Resume files, < 10MB/user
+Upstash Redis
+~$0.002
+~$0.002
+~$0.002
+Cache layer
+Gmail/Calendar API
+$0
+$0
+$0
+Free Google API
+TOTAL per user/month
+~$0.14
+~$0.03
+~$3.16 - $5.04
+
+
+12.6 Pricing Recommendation
+Tier
+Our Cost/User/Month
+Recommended Price
+Gross Margin
+Rationale
+Free
+~$0.14
+$0
+N/A (acquisition)
+5 searches/day cap limits cost. Growth lever.
+Platform Fee (BYO Key)
+~$0.03
+$2.99/mo (~₹249)
+~99%
+User pays API costs. We charge for platform only. Very profitable.
+Full Service
+~$5 (high estimate)
+$9.99/mo (~₹829)
+~50%
+Competitive with Teal.works ($29/mo) and Simplify ($10/mo). Strong margin.
+Enterprise
+~$2/seat (at scale)
+$25-50/mo
+~75-95%
+Negotiate per deal. Volume discounts.
+
+Competitive Benchmarks
+Teal.works: $29/month, manual tracking only, no AI agents
+Simplify.jobs: $10/month, auto-fill only, no resume tailoring
+LazyApply: $15/month, bulk apply only, no ATS intelligence
+JobPilot Full Service at $9.99/mo undercuts all competitors while offering significantly more automation.
+
+12.7 Payment Implementation (MVP Basic Setup)
+	•	MVP: Stripe integration for subscription billing (works globally + India via Stripe India)
+	•	Subscription webhooks: created, updated, deleted — update users.subscription_tier in DB
+	•	API key management page in Settings (for Platform Fee tier)
+	•	Billing page: current plan, next billing date, usage stats, upgrade/downgrade/cancel buttons
+	•	Cancel flow: retention survey + 'Pause instead of cancel?' option
+	•	India payments: Stripe supports UPI, cards, net banking — no separate Razorpay needed
+	•	Invoice emails: Stripe handles automatically
+	•	Free trial: 14-day free trial for Full Service on first sign-up (no credit card required)
+
+UI Requirements
+	•	Pricing page (/pricing): clean 4-column card layout, most popular highlighted with border + badge
+	•	Each plan card: price, billing period toggle (monthly/annual — annual shows 2 months free), feature list with checkmarks/crosses, primary CTA button
+	•	Settings > Billing: current plan highlighted, usage stats (searches used this month / limit), upgrade button
+	•	API Key settings (Platform Fee users): input field for Gemini API key, 'Validate' button, success/error state, 'How to get your API key' help link
+	•	Upgrade flow: Stripe Checkout hosted page — do not build custom payment form (PCI compliance)
+	•	Cancellation: confirmation modal with option to pause, survey question, final confirm button
+
+Testing Criteria
+	•	Free user with 5 job searches used — 6th search shows upgrade prompt
+	•	Platform Fee user adds valid Gemini API key — validated successfully, feature limits removed
+	•	Platform Fee user adds invalid API key — specific error shown: 'Invalid API key. Check your Google AI Studio dashboard.'
+	•	Full Service subscription via Stripe Checkout completes — user.subscription_tier updated to 'full_service'
+	•	Stripe webhook for subscription.deleted received — user downgraded to free tier immediately
+	•	14-day trial starts — trial_ends_at set in DB, user has Full Service access
+	•	Trial expires — email sent 3 days before, user downgraded to free on expiry
+	•	Annual plan selected — price shown as monthly equivalent with '2 months free' label
+
+13. Settings & Profile
+13.1 Settings Page Sections
+Section
+Settings Available
+Profile
+Name, email (read-only from Google), profile photo, timezone
+Job Preferences
+Target roles, target companies, location, work type, salary range, experience level
+Notifications
+Toggle each reminder type, daily reminder time, reminder frequency, pause all
+AI Model
+Select LLM (Gemini default; OpenAI/Claude in Phase 2), API key entry (Platform Fee tier)
+Privacy & Data
+Download all my data (GDPR), Delete all history, Delete account
+Connected Accounts
+Google account status, Gmail connected (Y/N), Calendar connected (Y/N), re-authorise button
+Billing
+Current plan, usage, upgrade/downgrade, cancel subscription
+Appearance
+Light / Dark / System theme toggle
+
+13.2 Data Export & Deletion (GDPR/DPDP Compliance)
+	•	'Download my data' generates a JSON export of all user data: profile, resumes, jobs, applications, contacts, notes
+	•	Export ready within 24 hours — user notified via email when ready
+	•	'Delete account' flow: confirmation dialog, 30-day grace period before hard delete, email confirmation
+	•	'Delete all job history' — soft delete (is_deleted=true), excluded from queries, hard deleted after 30 days
+	•	Data retention policy: inactive user data deleted after 2 years of no login
+
+Testing Criteria
+	•	Update job preferences — new job search uses updated preferences immediately
+	•	Toggle off 'apply_reminder' notifications — no apply reminder emails sent
+	•	Change reminder time to 7:00 AM — next day reminder arrives at 7:00 AM user's timezone
+	•	Google account re-authorisation flow — new tokens stored, existing sessions maintained
+	•	Request data export — confirmation email received, download available within 24h
+	•	Delete account — grace period email received, account accessible for 30 days, then deleted
+	•	Dark mode toggle — persists across page refreshes (stored in localStorage)
+	•	Settings page loads within 1 second
+
+14. Global Accessibility Requirements (WCAG 2.1 AA)
+14.1 Colour & Contrast
+	•	All text must meet WCAG 4.5:1 contrast ratio minimum (normal text)
+	•	Large text (18px+ or 14px+ bold) must meet 3:1 contrast ratio minimum
+	•	Interactive elements (buttons, links) must meet 3:1 contrast against adjacent colours
+	•	Do not use colour alone to convey information — always combine with text label or icon
+	•	Status badges (match score colours) must include text label — not just colour
+	•	Focus indicators: visible 2px outline on all interactive elements — never remove focus outline
+
+14.2 Keyboard Navigation
+	•	ALL interactive elements reachable by Tab key
+	•	Logical tab order: left-to-right, top-to-bottom
+	•	Skip to main content link as first focusable element on every page
+	•	Modal dialogs: trap focus inside modal, return focus to trigger on close
+	•	Dropdown menus: arrow keys to navigate, Escape to close
+	•	Kanban drag-and-drop: keyboard alternative — select card with Enter, move with arrow keys, confirm with Enter
+	•	No keyboard traps — user can always Tab away from any component
+
+14.3 Screen Reader Support
+	•	All images have descriptive alt text (decorative images: alt='')
+	•	Form inputs: always have visible label OR aria-label
+	•	Error messages: role='alert', associated with relevant input via aria-describedby
+	•	Loading states: aria-live='polite' for non-urgent updates, aria-live='assertive' for errors
+	•	Dynamic content changes: aria-live regions for job count updates, status changes
+	•	Page titles: unique, descriptive <title> for every page — '[Page Name] — JobPilot'
+	•	Landmark regions: <header>, <nav>, <main>, <aside>, <footer> — one <main> per page
+	•	Headings: logical hierarchy (h1 → h2 → h3) — no skipping levels
+
+14.4 Mobile & Touch Accessibility
+	•	Minimum touch target size: 44x44px for all interactive elements
+	•	Text resizable up to 200% without horizontal scrolling or content loss
+	•	No content relying on hover state — touch devices have no hover
+	•	Portrait and landscape orientation both supported
+	•	Pinch-to-zoom not disabled (never use user-scalable=no in meta viewport)
+
+14.5 Forms & Inputs
+	•	Autocomplete attributes on all relevant inputs (name, email, etc.)
+	•	Input validation errors shown inline below the relevant field
+	•	Required fields marked with asterisk + 'Required' in form legend
+	•	Error summary at top of form for complex forms (multi-field validation)
+	•	Success states communicated to screen readers via aria-live
+
+Component
+Accessibility Implementation
+Navigation
+role='navigation', aria-label='Main navigation', active link has aria-current='page'
+Kanban board
+role='list' for columns, role='listitem' for cards, aria-grabbed for drag-and-drop
+Modal/Dialog
+role='dialog', aria-modal='true', aria-labelledby pointing to dialog title, focus trapped
+Toast notifications
+role='status' for info, role='alert' for errors — positioned off-screen for screen readers
+Accordion/Expandable
+aria-expanded on trigger, aria-controls pointing to panel, aria-hidden on collapsed panel
+Status badges
+Colour + text label always, aria-label includes full status description
+Chart/Data viz
+role='img' with aria-label describing data, or data table as alternative
+File upload
+role='button' on custom drop zone, aria-label='Upload resume, PDF or DOCX', keyboard-activatable
+
+Testing Criteria
+	•	Lighthouse accessibility audit scores ≥ 90 on all pages
+	•	axe DevTools browser extension reports zero critical violations on all pages
+	•	Navigate entire application using keyboard only — no mouse — complete a full job application workflow
+	•	Test with VoiceOver (macOS/iOS) and NVDA (Windows) — all content readable and interactive
+	•	Zoom browser to 200% — no horizontal scrolling, no content overlap
+	•	Colour contrast checker (Colour Contrast Analyser) — all text passes 4.5:1
+	•	Focus indicator visible on every interactive element when tabbing
+	•	Modal opens — focus moves to modal title. Modal closes — focus returns to trigger button.
+	•	Form submission with errors — error summary announced by screen reader, focus moves to summary
+	•	All images have meaningful alt text — verified by screen reader pass-through
+
+15. Performance & Core Web Vitals
+15.1 Core Web Vitals Targets
+Metric
+Target
+Measurement Tool
+Priority
+LCP (Largest Contentful Paint)
+< 2.5 seconds
+Lighthouse, Chrome UX Report
+P0 — Critical
+INP (Interaction to Next Paint)
+< 200ms
+Lighthouse, PerformanceObserver
+P0 — Critical
+CLS (Cumulative Layout Shift)
+< 0.1
+Lighthouse, Layout Shift debugger
+P0 — Critical
+FCP (First Contentful Paint)
+< 1.8 seconds
+Lighthouse
+P1
+TTFB (Time to First Byte)
+< 800ms
+Lighthouse, server logs
+P1
+TBT (Total Blocking Time)
+< 200ms
+Lighthouse
+P1
+
+15.2 Implementation Rules
+Images
+	•	All images served in WebP format with JPEG/PNG fallback
+	•	All images have explicit width and height attributes to prevent CLS
+	•	Images below the fold: loading='lazy'
+	•	Company logos: max 40x40px, cached via Next.js Image component
+	•	No images > 200KB — compress before deployment
+	•	Use Next.js <Image> component for all images — automatic optimisation
+
+JavaScript
+	•	Code split by route — each page loads only its own JS
+	•	Third-party scripts (Stripe, analytics): loaded async with defer
+	•	No blocking scripts in <head>
+	•	Bundle size target: < 250KB initial JS (gzipped)
+	•	Use dynamic imports for large components (e.g. PDF viewer, chart library)
+
+CSS
+	•	Tailwind CSS purge enabled — remove unused classes in production
+	•	Critical CSS inlined — above-the-fold styles loaded synchronously
+	•	No render-blocking CSS from external sources
+
+Fonts
+	•	Use next/font for Google Fonts — fonts preloaded, no layout shift
+	•	font-display: swap to prevent invisible text during load
+	•	Maximum 2 font families
+
+API & Data Fetching
+	•	All dashboard data fetched server-side where possible (Next.js Server Components)
+	•	Stale-while-revalidate for job list — show cached data instantly, refresh in background
+	•	Optimistic updates for status changes — update UI immediately, sync with server
+	•	Kanban board virtualised if > 50 cards in any column — only render visible cards
+	•	Prefetch next page on hover for pagination
+
+Database
+	•	All DB queries use indexed columns (user_id, status, created_at — all indexed)
+	•	No N+1 queries — use Prisma include for related data
+	•	Dashboard stats computed via single aggregate query, not N separate queries
+	•	Redis cache for job search results (TTL: 2h) and gap analysis (TTL: 24h)
+
+15.3 Performance Monitoring
+	•	Vercel Analytics: automatic Core Web Vitals tracking per page
+	•	Sentry: error tracking + performance traces
+	•	Custom PerformanceObserver: track INP on all interactive elements
+	•	Lighthouse CI: run on every PR — fail if LCP > 3s or CLS > 0.15
+	•	Real user monitoring: collect Web Vitals from 1% of production traffic
+
+Testing Criteria
+	•	Lighthouse audit on /dashboard: LCP < 2.5s, CLS < 0.1, INP < 200ms — all green
+	•	Lighthouse audit on / (landing page): LCP < 2.5s — largest element loads quickly
+	•	Dashboard loads with skeleton UI first — no CLS when real data fills in (verify with Layout Shift debugger)
+	•	Kanban board with 100 job cards: no jank during scroll — FPS stays above 30
+	•	Job card status update: UI responds within 100ms (optimistic update)
+	•	Bundle size checked: main bundle < 250KB gzipped (verified with next/bundle-analyzer)
+	•	Page transition between /dashboard and /jobs/[id]: < 500ms perceived
+	•	Test on Moto G4 (Lighthouse default mobile emulation): all Core Web Vitals pass
+	•	Lighthouse CI check on GitHub PR: fails if performance regresses
+	•	Redis cache hit on job search: response in < 200ms
+
+16. Security & Best Practices
+16.1 Authentication Security
+	•	All routes protected by middleware — unauthenticated requests redirect to /sign-in
+	•	CSRF protection: NextAuth.js includes CSRF tokens for all mutations
+	•	Session tokens: HTTP-only cookies, SameSite=Lax, Secure in production
+	•	OAuth tokens: stored encrypted in DB (not in JWT to limit exposure)
+	•	API key encryption: Gemini API keys encrypted with AES-256 before DB storage
+
+16.2 Data Security
+	•	All DB connections use TLS
+	•	GCS bucket: private — no public access. All resume downloads via signed URLs (1h expiry)
+	•	PII (email, name, resume content): never logged in application logs
+	•	Stripe webhook: verify signature with Stripe-Signature header
+	•	Rate limiting on all API routes: 100 req/min per user, 20 req/min per IP for unauthenticated
+	•	Input validation: Zod schema validation on all API route inputs
+	•	SQL injection prevention: Prisma ORM parameterised queries — never string-concatenated SQL
+
+16.3 Privacy & Compliance
+	•	Privacy Policy: clearly state what data is collected, why, how long retained
+	•	Terms of Service: user agreement before first use
+	•	GDPR: right to access, right to delete, data portability — all implemented (Section 13.2)
+	•	India DPDP Act compliance: data processing consent, data minimisation, purpose limitation
+	•	Gmail access: minimal scopes requested — only read and send, not delete or modify
+	•	Resume content: never used to train AI models — stated in Privacy Policy
+	•	Cookies: only essential cookies without explicit consent; analytics cookies require consent banner
+
+Security Measure
+Implementation
+Priority
+HTTPS everywhere
+Enforced via Vercel (frontend) and Cloud Run (backend) — no HTTP in production
+P0
+Content Security Policy
+Strict CSP headers — prevent XSS attacks
+P0
+CORS
+FastAPI CORS: only allow requests from known frontend domains
+P0
+Dependency scanning
+GitHub Dependabot — auto PRs for vulnerable dependencies
+P1
+Secret management
+Google Secret Manager for production secrets — never in .env in production
+P0
+Audit logging
+All agent actions logged with user_id, timestamp, action type in audit_logs table
+P1
+
+17. Error Handling & Fallback Flows
+Scenario
+Detection
+Fallback
+User Message
+Resume PDF parse fails
+PyPDF2 exception or empty text output
+Show manual profile entry form
+'We couldn't read your resume automatically. Please fill in your details manually.'
+Job search returns 0 results
+Empty job list after search
+Broaden query (remove salary filter, expand location radius), retry once
+'No exact matches found. Showing broader results.'
+Gemini API quota exceeded
+429 response from Vertex AI
+Queue request, retry after 1 minute
+'AI is busy right now. Your request is queued and will process shortly.'
+Gemini API key invalid (BYO user)
+400/401 from Vertex AI
+Pause all AI features, notify user
+'Your API key is invalid. Please update it in Settings > AI Model.'
+Gmail MCP auth failure
+401 from Gmail API
+Trigger NextAuth token refresh, retry once. If still fails: mark Gmail as disconnected
+'Gmail connection expired. Click here to reconnect.'
+Calendar MCP failure
+Error from Calendar API
+Log failure, set reminder DB only, no Calendar event
+'We couldn't add this to your Calendar. Your email reminder is still set.'
+GCS upload fails
+Storage exception
+Retry once. If fails: store resume text in DB directly
+'Resume saved as text. PDF download will be available shortly.'
+LinkedIn search returns nothing
+Empty web search results for linkedin.com
+Return apply link only, omit contacts section
+'No LinkedIn contacts found for this company. Apply directly.'
+Network timeout on search
+> 20 second response time
+Return partial results, show cached results if available
+'Search took longer than expected. Showing recent results.'
+Cloud Run cold start
+> 3 second API response
+Show loading state immediately, do not show error
+Loading spinner — no user message needed
+Neon DB connection timeout
+SQLAlchemy connection error after 3 retries
+Return 503 to frontend
+'Temporary service issue. Please try again in a moment.'
+
+Error UI Principles
+	•	Never show raw error messages or stack traces to users
+	•	Every error state has: a human-readable message, a suggested action, and a way to recover
+	•	Errors in non-critical features (e.g. LinkedIn contacts not found) should not block critical flows (apply link still shown)
+	•	All errors logged to Sentry with full context for debugging
+	•	Error boundaries in React: each major section wrapped in Error Boundary — one section failing does not crash entire dashboard
+
+18. Technology Stack
+Layer
+Technology
+Version
+Purpose
+Resume Value
+Frontend Framework
+Next.js + TypeScript
+14 (App Router)
+SSR, API routes, single deployment
+Very High
+UI Components
+Tailwind CSS + shadcn/ui
+Latest
+Rapid UI, accessible components
+High
+State / Data
+TanStack Query (React Query)
+v5
+Server state, caching, optimistic updates
+High
+Agent Framework
+Google ADK
+Latest
+Multi-agent orchestration
+Cutting Edge
+LLM (default)
+Vertex AI Gemini 1.5 Pro
+Latest
+All AI reasoning and generation
+High
+Backend API
+FastAPI (Python)
+0.110+
+Agent service, async REST
+Very High
+Database
+PostgreSQL via Neon
+Serverless
+Primary data store
+Very High
+ORM
+Prisma
+v5
+Type-safe DB access, migrations
+High
+Auth
+NextAuth.js
+v5
+Google OAuth, session management
+Medium
+File Storage
+Google Cloud Storage
+Latest
+Resume PDF storage
+High
+Cache
+Upstash Redis
+Serverless
+Job search cache, rate limiting
+Medium
+Email (agent sends)
+Gmail MCP
+Latest
+Send reminders and prep guides
+High
+Calendar
+Google Calendar MCP
+Latest
+Schedule interviews and reminders
+High
+Web Search
+Web Search MCP
+Latest
+Job discovery, company research
+High
+Payments
+Stripe
+Latest
+Subscription billing
+High
+Frontend Deploy
+Vercel
+Latest
+Auto-deploy, edge CDN
+High
+Backend Deploy
+Google Cloud Run
+Latest
+Serverless containers
+High
+Containers
+Docker
+Latest
+Package agent service
+Very High
+CI/CD
+GitHub Actions
+Latest
+Lint, test, deploy
+High
+Error Tracking
+Sentry
+Latest
+Error monitoring, performance
+Medium
+Analytics
+Vercel Analytics
+Latest
+Core Web Vitals, page views
+Low
+
+19. Complete Database Schema (Prisma)
+All tables: UUID primary keys, timestamps in UTC, soft deletes via is_deleted boolean where applicable.
+
+Key Design Decisions
+	•	JSONB columns for flexible structured data (parsed resume, questions, gap analysis) — avoids over-normalisation for hackathon speed
+	•	ENUM types for status fields — enforced at DB level, not just application layer
+	•	Foreign key constraints on all relationships — data integrity enforced by DB
+	•	Indexes on user_id (all tables), status (applications, jobs), created_at (jobs, applications)
+	•	Separate reminders table — decoupled from application flow, allows flexible scheduling
+
+Table
+Key Columns
+Purpose
+users
+id, email, google_id, preferred_roles[], preferred_companies[], location_preference, work_type[], salary_min, reminder_time, reminder_timezone, subscription_tier, gemini_api_key_encrypted, trial_ends_at
+User profile, preferences, billing
+resumes
+id, user_id FK, original_url, parsed_skills JSONB, parsed_experience JSONB, parsed_education JSONB, gap_analysis JSONB, is_active
+Resume data and AI analysis
+jobs
+id, user_id FK, title, company, company_domain, description, apply_url, linkedin_url, easy_apply, match_score, salary_range, location, is_ats_platform, ats_platform, source_platform, found_at
+Job listings discovered by agent
+applications
+id, user_id FK, job_id FK, resume_id FK, tailored_resume_url, cover_letter, status ENUM, applied_at, response_received_at, follow_up_sent_at, interview_id FK, notes, is_deleted
+Application tracking pipeline
+contacts
+id, job_id FK, user_id FK, name, linkedin_url, title, is_existing_contact, outreach_status ENUM
+LinkedIn referral contacts per job
+interview_preps
+id, application_id FK, interview_date, interview_format, calendar_event_id, company_brief, questions JSONB, prep_email_sent_at, debrief_notes
+Interview preparation data
+mock_interview_sessions
+id, application_id FK, user_id FK, questions_asked JSONB, answers_evaluated JSONB, overall_score, strengths TEXT[], improvements TEXT[], completed_at
+Mock interview results
+reminders
+id, user_id FK, job_id FK, application_id FK, type ENUM, scheduled_at, sent_at, retry_count, calendar_event_id, gmail_message_id
+Scheduled notifications
+tracker_events
+id, user_id FK, application_id FK, email_subject, email_from, classification ENUM, processed_at
+Email scan history
+audit_logs
+id, user_id FK, action, entity_type, entity_id, metadata JSONB, created_at
+Agent action audit trail
+
+20. Development Roadmap
+20.1 MVP Build Order (Hackathon Priority)
+Day
+Focus
+Deliverables
+Definition of Done
+Day 1
+Foundation
+Neon DB schema + Prisma migrations, FastAPI skeleton with /health, Next.js project with auth (NextAuth + Google OAuth), GCS bucket configured
+User can sign in, DB tables exist, /health returns 200
+Day 2
+Core Agents
+Resume Agent (parse + gap analysis), Job Search Agent (web search + scoring), store results in DB
+Upload resume → parsed profile shown; search → 10+ scored jobs in DB
+Day 3
+Triple Attack + Dashboard
+Outreach Agent (apply URL + LinkedIn contacts), Kanban dashboard UI, Job card with triple attack links
+Dashboard shows job cards with apply link, LinkedIn contacts, Easy Apply link
+Day 4
+Reminders + Tracking
+Gmail MCP integration (send + read), Tracker Agent, Calendar MCP, reminder scheduler
+Gmail reminder sent with resume attached; interview invite detected from email
+Day 5
+Interview + Polish
+Interview Agent (prep + Calendar event), Resume tailoring, Cover letter generation, UI polish, Deploy
+Interview prep email sent; resume tailored with ATS score; deployed to Vercel + Cloud Run
+Buffer
+Testing + Demo Prep
+End-to-end test all flows, fix critical bugs, prepare demo data, rehearse demo
+Full E2E flow works without errors; demo rehearsed
+
+20.2 Post-Hackathon Phase 2
+Feature
+Priority
+Estimated Effort
+Mock Interview Agent
+P0 — Phase 2
+1 week
+Post-Interview Debrief Agent
+P0 — Phase 2
+3 days
+Stripe billing integration (Platform Fee + Full Service live)
+P0 — Phase 2
+1 week
+OpenAI GPT-4o BYO API key support
+P1 — Phase 2
+3 days
+Anthropic Claude BYO API key support
+P1 — Phase 2
+2 days
+Mobile app (React Native)
+P2 — Phase 3
+4-6 weeks
+Browser extension (auto-apply assist)
+P2 — Phase 3
+2-3 weeks
+Team/recruiter dashboard
+P3 — Phase 4
+4 weeks
+
+21. Testing Strategy
+21.1 Test Types Required
+Test Type
+Tool
+Coverage Target
+What Is Tested
+Unit tests
+Jest (JS) + pytest (Python)
+80% of utility functions
+Resume parsing logic, job scoring algorithm, ATS detection, email classification
+Integration tests
+Jest + Supertest
+All API routes
+Each FastAPI endpoint, Next.js API routes, DB operations
+E2E tests
+Playwright
+10 critical user journeys
+Sign-in, onboarding, job search, apply workflow, reminder received
+Accessibility tests
+axe-core + Playwright
+All pages
+Automated a11y violations — zero critical/serious issues
+Performance tests
+Lighthouse CI
+All pages
+Core Web Vitals pass on each PR
+Visual regression
+Chromatic (optional)
+Key components
+No unintended UI changes
+
+21.2 Critical E2E Test Scenarios
+	•	New user signs in → completes onboarding → resume parsed correctly → preferences saved
+	•	Job search triggered → ≥ 10 jobs returned → jobs stored in DB → displayed on dashboard
+	•	Job card opened → apply URL working → LinkedIn contacts shown → Easy Apply link present
+	•	Reminder approved → Gmail email received within 5 minutes → Calendar event created
+	•	Email from company domain scanned → human reply detected → status updated to 'responded'
+	•	ATS platform email (Greenhouse) → classified as auto_reply → no follow-up generated
+	•	Interview invite email → Calendar event created → Interview Agent triggered → prep email sent 24h before
+	•	Free user exceeds 5 search limit → upgrade prompt shown → Stripe checkout accessible
+	•	User changes reminder time in Settings → next reminder uses new time
+	•	User requests data export → email received with download link
+
+22. UI Design System & Components
+22.1 Colour Palette
+Token
+Hex Value
+Usage
+--color-primary
+#1B5FAD
+Primary buttons, active states, links, selected items
+--color-primary-dark
+#0F2D5E
+Page headers, headings, strong emphasis
+--color-primary-light
+#D6E8FA
+Info backgrounds, selected card backgrounds
+--color-success
+#1A7F4B
+High match score, offer status, success states, in-stock
+--color-warning
+#D17A00
+Medium match, pending states, partial warnings
+--color-danger
+#C0392B
+Low match, rejected status, errors, destructive actions
+--color-neutral-900
+#1A1A2E
+Primary text — all body copy
+--color-neutral-500
+#888888
+Secondary text — captions, timestamps, placeholders
+--color-neutral-100
+#F5F5F5
+Page background, alternating table rows
+--color-border
+#DDDDDD
+Default borders on cards, inputs, dividers
+
+22.2 Typography
+Style
+Font
+Size
+Weight
+Usage
+Display
+Inter
+32px
+700
+Page titles, hero headings
+H1
+Inter
+24px
+700
+Main section titles
+H2
+Inter
+20px
+600
+Card titles, subsection headers
+H3
+Inter
+17px
+600
+Component labels, form section titles
+Body Large
+Inter
+16px
+400
+Primary body text
+Body
+Inter
+14px
+400
+Secondary body, card content, labels
+Caption
+Inter
+12px
+400
+Timestamps, meta text, footnotes
+Label
+Inter
+12px
+600
+Form labels, badges, tags
+Code
+JetBrains Mono
+13px
+400
+API keys, code snippets
+
+22.3 Component Standards
+Component
+Specification
+Buttons
+Height: 40px (default), 48px (primary CTA). Border-radius: 8px. Font: 14px/600. Primary: filled --color-primary. Secondary: outlined. Ghost: no border. Danger: --color-danger fill.
+Input fields
+Height: 40px. Border-radius: 8px. Border: 1px --color-border. Focus: 2px --color-primary. Error: 1px --color-danger + error text below. Background: #F8FAFC.
+Cards
+Background: white. Border: 1px --color-border. Border-radius: 12px. Padding: 16px (mobile), 24px (desktop). No drop shadows.
+Match score badge
+Pill shape. Green: 80-100. Amber: 60-79. Gray: 40-59. Always includes number + label text.
+Status badges
+12px/600 text. Fully rounded. Color-coded per status. Always text + colour — never colour alone.
+Skeleton loaders
+Animated shimmer effect. Match exact dimensions of content they replace. Prevents layout shift.
+Toast notifications
+Bottom-right corner (desktop), bottom-center (mobile). Auto-dismiss: 5 seconds. Icon + message + optional action button.
+Modal dialogs
+Centred overlay. Max-width: 560px. Backdrop blur: none (use dim overlay 50% black). Always has close button (X) + Escape key close.
+Empty states
+Illustration (SVG) + heading + body text + primary action button. Illustration max-height: 200px.
+
+22.4 Page-by-Page UI Specification
+Page
+Route
+Layout
+Key Elements
+Mobile Behaviour
+Landing
+/ (public)
+Full-width hero, features, pricing preview, footer
+Hero: headline + CTA + animated product mockup. Features: 3-column grid with icons. Social proof: company logos.
+Single column, hero stacks vertically, features scroll vertically
+Sign In
+/sign-in
+Centered card, full-height page
+Card: 400px max-width, logo, tagline, Google button, privacy links in footer
+Card becomes full-width below 480px
+Onboarding
+/onboarding
+Centered wizard, 4 steps, progress indicator
+Progress pills at top, one focused step at a time, back/next navigation
+Full-width, step content stacked
+Dashboard
+/dashboard
+Fixed sidebar nav (240px) + main content
+Stats bar, Kanban board, activity feed (desktop only)
+Bottom tab nav, no sidebar, Kanban swipeable columns
+Job Detail
+/jobs/[id]
+Two-column: 60% content + 40% sidebar
+Triple attack section, resume download, cover letter, job details
+Single column, sidebar content moves below main
+Application Detail
+/applications/[id]
+Two-column: 60% content + 40% timeline
+Status stepper, timeline, notes, interview details
+Single column, timeline becomes collapsible section
+Interview Prep
+/interview/[id]
+Full-width, sectioned
+Company brief, tabbed questions, prep tips, download button
+Tabs collapse into accordion
+Settings
+/settings
+Sidebar nav + content area
+Sectioned form, save per section, no global save button
+Sidebar becomes full-width top tabs
+Pricing
+/pricing
+Full-width, 4 columns desktop
+Plan cards, feature comparison table, FAQ accordion
+Single column plan cards, stacked
+
+Appendix: Glossary
+Term
+Definition
+ATS
+Applicant Tracking System — software used by companies to manage job applications. Common platforms: Greenhouse, Workday, Lever.
+ATS Score
+Keyword match percentage between a resume and job description. Higher score = resume more likely to pass automated screening.
+BYO API Key
+Bring Your Own API Key — Platform Fee tier where user provides their own Gemini API key.
+Triple Attack
+JobPilot's 3-path apply strategy per job: direct apply link + LinkedIn referral contacts + LinkedIn Easy Apply link.
+Coordinator Agent
+The root Google ADK agent that receives all user requests and delegates to specialist sub-agents.
+MCP
+Model Context Protocol — Anthropic's open standard for AI tool integration (Gmail, Calendar, Web Search).
+LCP
+Largest Contentful Paint — Core Web Vital measuring when the main content loads.
+INP
+Interaction to Next Paint — Core Web Vital measuring responsiveness to user interactions.
+CLS
+Cumulative Layout Shift — Core Web Vital measuring visual stability (no unexpected layout jumps).
+WCAG 2.1 AA
+Web Content Accessibility Guidelines version 2.1, Level AA — the industry standard accessibility compliance level.
+P0 / P1 / P2
+Priority levels: P0 = must have for MVP, P1 = important but not blocking, P2 = future enhancement.

@@ -1,0 +1,14 @@
+John Doe
+Software Engineer
+
+Experience:
+- Senior Software Engineer at TechCorp (2020-2024)
+- Software Engineer at StartupXYZ (2018-2020)
+
+Skills:
+- Python, JavaScript, React, Node.js
+- PostgreSQL, MongoDB
+- AWS, Docker, Kubernetes
+
+Education:
+- B.S. Computer Science, University of Technology (2014-2018)
