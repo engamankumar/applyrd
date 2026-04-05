@@ -1,15 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Search, ArrowLeft, Loader2, Sparkles, TrendingUp } from "lucide-react";
+import { Search as SearchIcon, ArrowLeft, Loader2, Sparkles, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { useOrchestrator } from "@/hooks/useOrchestrator";
 import Link from "next/link";
 
-export default function SearchPage() {
+function SearchContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const initialQuery = searchParams.get("q") || "";
@@ -49,7 +49,7 @@ export default function SearchPage() {
            </p>
            
            <form onSubmit={handleSearch} className="max-w-2xl mx-auto relative mt-10">
-              <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-muted-foreground opacity-50" size={20} />
+              <SearchIcon className="absolute left-5 top-1/2 -translate-y-1/2 text-muted-foreground opacity-50" size={20} />
               <Input 
                  placeholder="E.g., 'Senior Product Designer at Figma'..."
                  value={query}
@@ -99,5 +99,17 @@ export default function SearchPage() {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense fallback={
+       <div className="flex h-screen items-center justify-center">
+          <Loader2 className="animate-spin text-primary" size={32} />
+       </div>
+    }>
+       <SearchContent />
+    </Suspense>
   );
 }
