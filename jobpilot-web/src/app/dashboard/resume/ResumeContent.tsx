@@ -86,7 +86,7 @@ export default function ResumeContent({ initialResumes, latestResume }: { initia
     try {
       const formData = new FormData()
       formData.append("file", uploadFile)
-      const res = await fetch("http://localhost:8000/agent/parse-resume", { method: "POST", body: formData })
+      const res = await fetch(`${process.env.NEXT_PUBLIC_AGENT_SERVICE_URL}/agent/parse-resume`, { method: "POST", body: formData })
       const data = await res.json()
       if (data.status === "success") {
         setUploadResult(data.data)
@@ -116,7 +116,7 @@ export default function ResumeContent({ initialResumes, latestResume }: { initia
         
         // Trigger server match score update
         if (res.userId) {
-          fetch("http://localhost:8000/agent/recalculate-scores", {
+          fetch(`${process.env.NEXT_PUBLIC_AGENT_SERVICE_URL}/agent/recalculate-scores`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ user_id: res.userId })
@@ -144,7 +144,7 @@ export default function ResumeContent({ initialResumes, latestResume }: { initia
         toast.success("✅ Resume activated! Recalculating match scores...");
         
         if (res.userId) {
-           fetch("http://localhost:8000/agent/recalculate-scores", {
+           fetch(`${process.env.NEXT_PUBLIC_AGENT_SERVICE_URL}/agent/recalculate-scores`, {
              method: "POST",
              headers: { "Content-Type": "application/json" },
              body: JSON.stringify({ user_id: res.userId })

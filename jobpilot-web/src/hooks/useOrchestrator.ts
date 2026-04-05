@@ -17,7 +17,7 @@ export interface OrchestrationResult {
   data: any;
 }
 
-const AGENT_API = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL || "http://localhost:8000";
+const AGENT_API = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL;
 
 export function useOrchestrator() {
   const router = useRouter();

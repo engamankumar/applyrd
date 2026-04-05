@@ -40,7 +40,7 @@ export default function JobDetailClient({ job, userEmail }: { job: any, userEmai
   const handleInboxSync = async () => {
     setIsSyncing(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_AGENT_SERVICE_URL || 'http://localhost:8000'}/agent/monitor-gmail`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_AGENT_SERVICE_URL}/agent/monitor-gmail`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ company_domain: job.company.toLowerCase() + ".com" })

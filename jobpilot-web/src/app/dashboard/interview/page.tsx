@@ -11,7 +11,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { getMockInterviewSessions, getUserProfile, getUserJobs } from "@/lib/actions/onboarding"
 import axios from "axios"
 
-const AGENT_API = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL || "http://localhost:8000"
+const AGENT_API = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL;
 
 type ChatMsg = {
   role: "ai" | "user"

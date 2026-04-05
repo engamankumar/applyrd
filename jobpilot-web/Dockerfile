@@ -20,12 +20,20 @@ COPY . .
 # Generate Prisma Client again in builder to ensure OS compat
 RUN npx prisma generate
 
+# Set and bake production variables
+ARG NEXT_PUBLIC_AGENT_SERVICE_URL
+ENV NEXT_PUBLIC_AGENT_SERVICE_URL=$NEXT_PUBLIC_AGENT_SERVICE_URL
+ARG NEXT_PUBLIC_APP_URL
+ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+
 # Build the Next.js app
 ENV NEXT_TELEMETRY_DISABLED 1
 RUN npm run build
 
 FROM base AS runner
 WORKDIR /app
+
+RUN apk add --no-cache libc6-compat openssl
 
 ENV NODE_ENV production
 ENV NEXT_TELEMETRY_DISABLED 1

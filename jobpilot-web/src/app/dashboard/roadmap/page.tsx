@@ -13,7 +13,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import axios from "axios"
 import { getUserProfile } from "@/lib/actions/onboarding"
 
-const AGENT_API = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL || "http://localhost:8000"
+const AGENT_API = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL;
 
 type RoadmapData = {
   missing_skills: string[]
