@@ -8,8 +8,8 @@ async def call_gmail_mcp(tool_name: str, arguments: dict):
     Connects to the local Gmail MCP Server via standard IO and calls a specific tool.
     This demonstrates real Model Context Protocol usage.
     """
-    # Use the local venv python to ensure dependencies are found
-    python_path = os.path.join(os.getcwd(), "venv", "bin", "python3")
+    # Use system python on Cloud Run
+    python_path = "python3"
     server_params = StdioServerParameters(
         command=python_path,
         args=["agents/mcp_gmail_server.py"],

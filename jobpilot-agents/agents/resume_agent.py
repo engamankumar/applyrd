@@ -2,7 +2,7 @@ import os
 import json
 import io
 from typing import Dict, Any
-import PyPDF2
+import pypdf
 from vertexai.generative_models import GenerativeModel, Part
 import vertexai
 from agents.config import CASCADE_MODELS
@@ -34,7 +34,7 @@ class ResumeAgent:
 
     def _extract_text_from_pdf(self, file_content: bytes) -> str:
         try:
-            reader = PyPDF2.PdfReader(io.BytesIO(file_content))
+            reader = pypdf.PdfReader(io.BytesIO(file_content))
             text = ""
             for page in reader.pages:
                 text += page.extract_text() + "\n"
