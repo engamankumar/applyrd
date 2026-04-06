@@ -17,7 +17,8 @@ export interface OrchestrationResult {
   data: any;
 }
 
-const AGENT_API = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL;
+const AGENT_API = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL || "https://jobpilot-agents-704256979090.europe-west1.run.app";
+const ORCHESTRATOR_URL = `${AGENT_API}/agent/orchestrate`;
 
 export function useOrchestrator() {
   const router = useRouter();
