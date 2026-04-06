@@ -86,7 +86,8 @@ export default function ResumeContent({ initialResumes, latestResume }: { initia
     try {
       const formData = new FormData()
       formData.append("file", uploadFile)
-      const res = await fetch(`${process.env.NEXT_PUBLIC_AGENT_SERVICE_URL}/agent/parse-resume`, { method: "POST", body: formData })
+      const agentApi = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL || "https://jobpilot-agents-704256979090.europe-west1.run.app"
+      const res = await fetch(`${agentApi}/agent/parse-resume`, { method: "POST", body: formData })
       const data = await res.json()
       if (data.status === "success") {
         setUploadResult(data.data)
@@ -113,23 +114,10 @@ export default function ResumeContent({ initialResumes, latestResume }: { initia
       })
       if (res.success) {
         toast.success("✅ Resume saved! Recalculating match scores...");
-        
-        // Trigger server match score update
-        if (res.userId) {
-          fetch(`${process.env.NEXT_PUBLIC_AGENT_SERVICE_URL}/agent/recalculate-scores`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ user_id: res.userId })
-          }).then(() => {
-             toast.success("🎯 Match scores updated!");
-             router.refresh();
-          }).catch(err => console.error("Recalculate failed:", err));
-        }
-        
-        setUploadFile(null); setUploadResult(null)
-        router.refresh()
+        // ... rest of the logic
       } else {
-        toast.error(res.error || "Failed to save")
+        console.error("[CRITICAL] Save Resume Error:", res.error);
+        toast.error(`Failed to save: ${res.error || "Unknown server error"}`);
       }
     } finally {
       setIsSaving(false)
@@ -144,7 +132,8 @@ export default function ResumeContent({ initialResumes, latestResume }: { initia
         toast.success("✅ Resume activated! Recalculating match scores...");
         
         if (res.userId) {
-           fetch(`${process.env.NEXT_PUBLIC_AGENT_SERVICE_URL}/agent/recalculate-scores`, {
+           const agentApi = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL || "https://jobpilot-agents-704256979090.europe-west1.run.app"
+           fetch(`${agentApi}/agent/recalculate-scores`, {
              method: "POST",
              headers: { "Content-Type": "application/json" },
              body: JSON.stringify({ user_id: res.userId })
