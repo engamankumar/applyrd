@@ -175,8 +175,15 @@ export async function saveResumeData(data: {
   const session = await auth()
   if (!session?.user?.email) return { error: "Unauthorized" }
 
-  const user = await prisma.user.findUnique({ where: { email: session.user.email } })
-  if (!user) return { error: "User not found" }
+  // 1. Ensure user exists with upsert (Auto-creation on first save)
+  const user = await prisma.user.upsert({
+    where: { email: session.user.email },
+    update: {}, // No updates needed, just ensure existence
+    create: {
+      email: session.user.email,
+      name: session.user.name || "JobPilot User",
+    }
+  })
 
   try {
     await prisma.resume.create({
