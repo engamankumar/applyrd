@@ -28,7 +28,7 @@ export default function ResumeContent({ initialResumes, latestResume }: { initia
   const [selectedResumeId, setSelectedResumeId] = useState<string | null>(latestResume?.id || null);
 
   const selectedResume = initialResumes.find(r => r.id === selectedResumeId) || (uploadResult ? null : initialResumes[0]);
-  
+
   // Decide what data to show in details
   const displayData = uploadResult ? {
     skills: uploadResult.skills || [],
@@ -114,7 +114,22 @@ export default function ResumeContent({ initialResumes, latestResume }: { initia
       })
       if (res.success) {
         toast.success("✅ Resume saved! Recalculating match scores...");
-        // ... rest of the logic
+        
+        // Trigger server match score update
+        if (res.userId) {
+          const agentApi = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL || "https://jobpilot-agents-704256979090.europe-west1.run.app"
+          fetch(`${agentApi}/agent/recalculate-scores`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_id: res.userId })
+          }).then(() => {
+             toast.success("🎯 Match scores updated!");
+             router.refresh();
+          }).catch(err => console.error("Recalculate failed:", err));
+        }
+        
+        setUploadFile(null); setUploadResult(null)
+        router.refresh()
       } else {
         console.error("[CRITICAL] Save Resume Error:", res.error);
         toast.error(`Failed to save: ${res.error || "Unknown server error"}`);
@@ -130,17 +145,17 @@ export default function ResumeContent({ initialResumes, latestResume }: { initia
       const res = await setActiveResume(id)
       if (res.success) {
         toast.success("✅ Resume activated! Recalculating match scores...");
-        
+
         if (res.userId) {
-           const agentApi = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL || "https://jobpilot-agents-704256979090.europe-west1.run.app"
-           fetch(`${agentApi}/agent/recalculate-scores`, {
-             method: "POST",
-             headers: { "Content-Type": "application/json" },
-             body: JSON.stringify({ user_id: res.userId })
-           }).then(() => {
-              toast.success("🎯 All match scores updated!");
-              router.refresh();
-           });
+          const agentApi = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL || "https://jobpilot-agents-704256979090.europe-west1.run.app"
+          fetch(`${agentApi}/agent/recalculate-scores`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_id: res.userId })
+          }).then(() => {
+            toast.success("🎯 All match scores updated!");
+            router.refresh();
+          });
         }
         router.refresh()
       } else {
@@ -169,7 +184,7 @@ export default function ResumeContent({ initialResumes, latestResume }: { initia
             className={`relative border-2 border-dashed rounded-3xl p-8 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all duration-300 group
               ${isDragging ? "border-primary bg-primary/8 scale-[1.02]"
                 : uploadFile ? "border-emerald-500/40 bg-emerald-500/5"
-                : "border-muted/20 hover:border-primary/40 hover:bg-primary/3 bg-surface-container-low"}`}
+                  : "border-muted/20 hover:border-primary/40 hover:bg-primary/3 bg-surface-container-low"}`}
           >
             <input ref={fileInputRef} type="file" accept=".pdf,.txt" className="hidden"
               onChange={e => e.target.files?.[0] && handleFileSelect(e.target.files[0])} />
@@ -360,21 +375,21 @@ export default function ResumeContent({ initialResumes, latestResume }: { initia
                   )}
                 </div>
                 <div className="flex flex-col items-end gap-2">
-                   <div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground bg-surface-container-low px-3 py-1.5 rounded-full">
-                     <Calendar size={10} />
-                     {new Date(selectedResume.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
-                   </div>
-                   
-                   {selectedResume.id !== latestResume?.id && !uploadResult && (
-                      <Button 
-                        size="xs" 
-                        onClick={() => handleSetActive(selectedResume.id)}
-                        disabled={isSaving}
-                        className="bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-white rounded-xl font-bold h-7 px-3 text-[9px] uppercase tracking-widest"
-                      >
-                         {isSaving ? "Setting..." : "Set as Active"}
-                      </Button>
-                   )}
+                  <div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground bg-surface-container-low px-3 py-1.5 rounded-full">
+                    <Calendar size={10} />
+                    {new Date(selectedResume.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
+                  </div>
+
+                  {selectedResume.id !== latestResume?.id && !uploadResult && (
+                    <Button
+                      size="xs"
+                      onClick={() => handleSetActive(selectedResume.id)}
+                      disabled={isSaving}
+                      className="bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-white rounded-xl font-bold h-7 px-3 text-[9px] uppercase tracking-widest"
+                    >
+                      {isSaving ? "Setting..." : "Set as Active"}
+                    </Button>
+                  )}
                 </div>
               </div>
 
