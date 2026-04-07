@@ -59,7 +59,8 @@ class JobSearchAgent:
             raise Exception(f"All models failed. Last error: {last_err}")
         else:
             # Fallback to older SDK (sync) with multiple model attempts
-            models = ["gemini-1.5-flash-002", "gemini-1.5-flash", "gemini-1.5-pro"]
+            from agents.config import CASCADE_MODELS
+            models = [m.replace("models/", "") for m in CASCADE_MODELS]
             for mid in models:
                 try:
                     from vertexai.generative_models import GenerativeModel
@@ -199,7 +200,13 @@ class JobSearchAgent:
         raw_jobs = self._fetch_from_scrapingdog(role, location)
             
         if not raw_jobs:
-            print("No API keys found or APIs failed, using Gemini synthetic generation fallback.")
+            # Check if key is even there
+            sd_key = os.getenv("SCRAPINGDOG_API_KEY")
+            if not sd_key:
+                print("⚠️ [Search API] SCRAPINGDOG_API_KEY is missing in .env. Using Gemini Brain for job discovery.")
+            else:
+                print(f"ℹ️ [Search API] Live search for '{role}' returned 0 results. Falling back to Gemini Intelligence.")
+            
             discovery_prompt = f"""
             You are a Job Search Agent. Based on the user's preferred role '{role}' and location '{location}', 
             generate 5 realistic, high-quality job opportunities that currently exist in the market (e.g. at companies like Google, Stripe, Zomato, etc.)

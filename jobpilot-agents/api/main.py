@@ -1,7 +1,8 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import json
+import httpx
 import asyncio
 from dotenv import load_dotenv
 from typing import List, Dict, Optional
@@ -14,7 +15,10 @@ from agents.skill_gap_agent import SkillGapAgent, GoogleSkillsAgent
 from agents.interview_agent import InterviewAgent, MockInterviewSession
 from agents.job_search_agent import JobSearchAgent
 from agents.resume_agent import ResumeAgent
+from agents.inbox_agent import InboxAgent
 from agents.mcp_client import call_gmail_mcp
+import uuid
+import httpx
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 # Force load from .env file explicitly to avoid shell env issues
@@ -25,13 +29,20 @@ _ld(os.path.join(os.getcwd(), ".env"))
 def log(msg):
     with open("server.log", "a") as f:
         f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
-    print(msg)
+        f.flush()
+    print(msg, flush=True)
 
 log("🚀 [Server Reload] Initializing...")
+log("DEBUG: Root imports complete")
 
 # ── Persistent Scheduler Initialization (Hybrid Mode) ──────────────────────────
-from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
-from apscheduler.jobstores.memory import MemoryJobStore
+log("DEBUG: Loading JobStores...")
+try:
+    from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+    from apscheduler.jobstores.memory import MemoryJobStore
+    log("DEBUG: JobStores loaded.")
+except Exception as e:
+    log(f"❌ [DEBUG ERROR] Failed to load JobStores: {e}")
 
 def build_db_jobstore():
     """Bulletproof SQLAlchemy Engine Creator for Cloud SQL Unix Sockets"""
@@ -42,7 +53,7 @@ def build_db_jobstore():
         import urllib.parse
         parsed = urllib.parse.urlparse(raw)
         params = urllib.parse.parse_qs(parsed.query)
-        socket_path = params.get("host", ["/cloudsql/applyrd-ai:europe-west1:jobpilot-db"])[0]
+        socket_path = params.get("host", [os.getenv("CLOUD_SQL_CONNECTION_NAME", "/cloudsql/applyrd-ai:europe-west1:jobpilot-db")])[0]
         
         # Format for SQLAlchemy with Unix Sockets
         # postgresql+psycopg2://user:password@/dbname?host=/path/to/socket
@@ -53,7 +64,8 @@ def build_db_jobstore():
         )
     
     return SQLAlchemyJobStore(
-        url=raw.replace("postgresql://", "postgresql+psycopg2://"),
+        # Strip ?schema=... if present to avoid psycopg2.ProgrammingError
+        url=raw.replace("postgresql://", "postgresql+psycopg2://").split("?")[0],
         tablename='apscheduler_jobs_v2'
     )
 
@@ -91,9 +103,7 @@ try:
         gemini_client = gai.Client(api_key=GEMINI_API_KEY)
         # Skip probe, go optimistic if a key is present
         MOCK_MODE = False
-        from agents.config import get_active_model
-        os.environ["GEMINI_MODEL_ID"] = get_active_model()
-        log("✅ [Startup] Gemini API Key found — Optimistic LIVE MODE enabled.")
+        log("✅ [Startup] Gemini API Key found — Dynamic Live Mode enabled.")
     else:
         MOCK_MODE = True
         log("⚠️ [Startup] No API key found — MOCK MODE enabled.")
@@ -101,19 +111,50 @@ except Exception as e:
     MOCK_MODE = True
     log(f"❌ [Startup] Gemini core initialization error: {e}")
 
-# Global Agent Instances
-coordinator = CoordinatorAgent(gemini_client, MOCK_MODE)
-skill_gap_agent = SkillGapAgent(PROJECT_ID, LOCATION, client=gemini_client)
-google_skills_agent = GoogleSkillsAgent(client=gemini_client)
-interview_agent = InterviewAgent(PROJECT_ID, LOCATION, client=gemini_client)
-job_search_agent_instance = JobSearchAgent(PROJECT_ID, LOCATION, client=gemini_client)
-resume_agent_instance = ResumeAgent(PROJECT_ID, LOCATION, client=gemini_client)
+# Global Agent Instances (Initialized later to avoid import hangs)
+coordinator = None
+skill_gap_agent = None
+google_skills_agent = None
+interview_agent = None
+job_search_agent_instance = None
+resume_agent_instance = None
+inbox_agent = None
 interview_sessions = {}
+inbox_sync_locks = {}
+last_sweep_locks = {} # In-memory lock to prevent duplicate daily sweeps in the same minute
+_GETTING_AGENTS = False
+
+def get_agents():
+    """Lazy initializer for agents to prevent top-level network blocks."""
+    global coordinator, skill_gap_agent, google_skills_agent, interview_agent, job_search_agent_instance, resume_agent_instance, inbox_agent, _GETTING_AGENTS
+    if coordinator or _GETTING_AGENTS: return
+    
+    _GETTING_AGENTS = True
+    try:
+        print("🧩 [Agents] Starting Lazy Initialization...", flush=True)
+        coordinator = CoordinatorAgent(gemini_client, MOCK_MODE)
+        print("🧩 [Agents] Coordinator ready.", flush=True)
+        skill_gap_agent = SkillGapAgent(PROJECT_ID, LOCATION, client=gemini_client)
+        print("🧩 [Agents] SkillGap ready.", flush=True)
+        google_skills_agent = GoogleSkillsAgent(client=gemini_client)
+        print("🧩 [Agents] GoogleSkills ready.", flush=True)
+        interview_agent = InterviewAgent(PROJECT_ID, LOCATION, client=gemini_client)
+        print("🧩 [Agents] Interview ready.", flush=True)
+        job_search_agent_instance = JobSearchAgent(PROJECT_ID, LOCATION, client=gemini_client)
+        print("🧩 [Agents] JobSearch ready.", flush=True)
+        resume_agent_instance = ResumeAgent(PROJECT_ID, LOCATION, client=gemini_client)
+        print("🧩 [Agents] Resume ready.", flush=True)
+        inbox_agent = InboxAgent(client=gemini_client)
+        print("🧩 [Agents] All instances initialized.", flush=True)
+    finally:
+        _GETTING_AGENTS = False
 
 def ai(prompt: str) -> str:
     """Helper to call Gemini or return a placeholder in mock mode."""
     if gemini_client is None:
         return "__MOCK__"
+    
+    get_agents()
     
     from agents.config import get_active_model, CASCADE_MODELS
     active = get_active_model()
@@ -151,9 +192,9 @@ def get_db_connection():
     if not db_url: return None
     
     try:
-        # If Cloud SQL socket is provided as a query param, extract it correctly
+        import urllib.parse
+        # If Cloud SQL socket is provided as a query param, try it first
         if "host=/cloudsql/" in db_url:
-            import urllib.parse
             parsed = urllib.parse.urlparse(db_url)
             params = urllib.parse.parse_qs(parsed.query)
             socket_path = params.get("host", [None])[0]
@@ -163,14 +204,15 @@ def get_db_connection():
                 user=parsed.username,
                 password=parsed.password,
                 host=socket_path,
-                cursor_factory=RealDictCursor
+                cursor_factory=RealDictCursor,
+                connect_timeout=3 # Fast fail for socket!
             )
-        
-        # Fallback for standard or local DATABASE_URL
-        if "?" in db_url: db_url = db_url.split("?")[0]
-        return psycopg2.connect(db_url, cursor_factory=RealDictCursor)
+        else:
+            # Strip query params like ?schema=public which psycopg2 doesn't like
+            clean_url = db_url.split("?")[0] if "?" in db_url else db_url
+            return psycopg2.connect(clean_url, cursor_factory=RealDictCursor, connect_timeout=3)
     except Exception as e:
-        log(f"❌ [Database Error] Failed to connect: {e}")
+        log(f"❌ [DB Connection Error] {e}")
         return None
 
 # ── Dynamic Agentic Scheduler ──────────────────────────────────────────────────
@@ -178,7 +220,9 @@ async def agentic_schedule_executor():
     """
     Every minute, check which users need a daily sweep and execute it.
     """
-    print(f"💓 [Agentic Heartbeat] {datetime.now().strftime('%H:%M:%S')} - Checking for schedules...")
+    get_agents()
+    log_quiet = lambda msg: open("server.log", "a").write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+    log_quiet(f"💓 [Agentic Heartbeat] Checking for schedules...")
     
     # ABSOLUTE TIME MATCH: Force IST for comparison since Cloud Run is UTC
     from datetime import timezone
@@ -208,6 +252,38 @@ async def agentic_schedule_executor():
         print(f"💓 [Agentic Heartbeat] {now_hour} - Found {len(users_to_update)} users to sweep.")
         
         for user in users_to_update:
+            # Prevent duplicate sweeps in the same minute if server is busy/restarts
+            # PERSISTENT LOCK: Check DB instead of just memory
+            lock_key = f"{user['id']}_{now_hour}"
+            today_date = datetime.now().strftime("%Y-%m-%d")
+            
+            # Check Memory first for speed
+            if last_sweep_locks.get(lock_key) == today_date:
+                continue
+                
+            # Check DB for absolute persistence across restarts
+            try:
+                conn_check = get_db_connection()
+                if conn_check:
+                    cur_check = conn_check.cursor()
+                    # Check if a sweep was already sent TODAY for this user
+                    cur_check.execute('''
+                        SELECT id FROM "Reminder" 
+                        WHERE user_id = %s AND type = 'daily_sweep_digest' 
+                        AND scheduled_at::date = CURRENT_DATE
+                    ''', (user['id'],))
+                    if cur_check.fetchone():
+                        # Mark in memory to stop checking DB for this minute
+                        last_sweep_locks[lock_key] = today_date
+                        cur_check.close()
+                        conn_check.close()
+                        continue
+                    cur_check.close()
+                    conn_check.close()
+            except: pass
+
+            last_sweep_locks[lock_key] = today_date
+            
             print(f"🔍 [Scheduler] Triggering for: {user['email']} (Token Presence: {'YES' if user.get('refresh_token') else 'NO'})")
             # 1. Revitalize the Access Token from Refresh Token if available
             live_token = None
@@ -233,13 +309,32 @@ async def agentic_schedule_executor():
                 "preferred_roles": [role],
                 "location_preference": user['location_preference'] or "Remote"
             }
-            # Trigger the sweep directly
-            await daily_sweep({
-                "user_email": user['email'],
-                "user_id": user['id'],
-                "preferences": prefs,
-                "access_token": live_token # Passing REAL token for background send!
-            })
+            # 2. Trigger the Sweep (This will send the digest if it's the scheduled time)
+            try:
+                # RECORD the sweep in DB BEFORE firing to avoid race conditions
+                conn_lock = get_db_connection()
+                if conn_lock:
+                    cur_lock = conn_lock.cursor()
+                    cur_lock.execute('''
+                        INSERT INTO "Reminder" (id, user_id, type, scheduled_at, created_at)
+                        VALUES (%s, %s, 'daily_sweep_digest', NOW(), NOW())
+                    ''', (str(uuid.uuid4()), user['id']))
+                    conn_lock.commit()
+                    cur_lock.close()
+                    conn_lock.close()
+
+                await daily_sweep({
+                    "user_email": user['email'],
+                    "user_id": user['id'],
+                    "preferences": prefs,
+                    "access_token": live_token # Passing REAL token for background send!
+                }, silent=True) # NEVER SEND EMAILS FROM BACKGROUND HEARTBEAT
+            except Exception as sweeperr:
+                log(f"❌ [Scheduler Error] {user['email']}: {sweeperr}")
+            
+            # TRIGGER INBOX SYNC: Check for responses every heartbeat for active users!
+            if live_token:
+                await sync_gmail_inbox(user['id'], user['email'], live_token, silent=True)
             
     except Exception as e:
         print(f"❌ [Scheduler Error] {e}")
@@ -248,49 +343,61 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Check for DB connection on start
+    print("🚀 [Lifespan] Starting...", flush=True)
     db_url = os.getenv("DATABASE_URL")
-    if db_url: 
-        print("🔗 [Database] Connection string detected for dynamic scheduling.")
     
-    # 1. ABSOLUTE RESET: Clear any corrupted ghost jobs from the database once
-    # This happens BEFORE the scheduler starts to avoid Conflicts!
-    if db_url:
-        try:
-            conn = get_db_connection()
-            if conn:
-                cur = conn.cursor()
-                cur.execute("DROP TABLE IF EXISTS apscheduler_jobs")
-                cur.execute("DROP TABLE IF EXISTS apscheduler_jobs_v2")
-                conn.commit()
-                cur.close()
-                conn.close()
-                log("🧹 [Lifespan] Persistent tables reset for fresh start.")
-        except Exception as e:
-            log(f"⚠️ [Lifespan] Table Reset Skip: {e}")
-
-    # 2. Lazy Initialization: Create the scheduler ONLY AFTER the wipe!
+    # 2. Lazy Initialization: Create the scheduler
     global scheduler
-    scheduler = init_scheduler()
-    scheduler.start()
+    try:
+        scheduler = init_scheduler()
+        scheduler.start()
+        print("🚀 [Lifespan] Scheduler Online", flush=True)
+    except Exception as e:
+        print(f"❌ [Lifespan Error] Scheduler failed: {e}", flush=True)
     
-    # 3. Add/Refresh the memory-based system sweep job (IST synchronized)
-    from datetime import timezone
-    ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    # NEW: Smart Per-User Scheduling!
+    conn = get_db_connection()
+    if conn:
+        cur = conn.cursor()
+        cur.execute('SELECT id, email, reminder_time FROM "User" WHERE reminder_time IS NOT NULL')
+        users = cur.fetchall()
+        for user in users:
+            try:
+                # Format: "HH:MM" -> hour=H, minute=M
+                h, m = map(int, user['reminder_time'].split(':'))
+                # Create a persistent CRON job for this exact user!
+                scheduler.add_job(
+                    daily_sweep, 
+                    'cron', 
+                    hour=h, 
+                    minute=m, 
+                    id=f"briefing_{user['id']}",
+                    args=[{"user_id": user['id'], "user_email": user['email']}],
+                    replace_existing=True,
+                    misfire_grace_time=3600 # Catch up if server was down!
+                )
+                log(f"⏰ [Scheduler] Registered briefing for {user['email']} at {user['reminder_time']} IST.")
+            except Exception as e:
+                log(f"⚠️ [Scheduler] Could not register briefing for {user['email']}: {e}")
+        cur.close()
+        conn.close()
     
-    # RENAME to agentic_memory_sweep to stay away from old DB ghost-jobs!
+    # Keep Global Sync but set to a longer interval since we have per-user cron now
     scheduler.add_job(
-        agentic_schedule_executor, 
-        'interval', 
-        minutes=1, 
-        id='agentic_memory_sweep', 
+        global_inbox_sync_executor,
+        'interval',
+        hours=6,
+        id='global_inbox_sync',
         replace_existing=True,
-        next_run_time=datetime.now() # Start immediately on wake-up!
+        next_run_time=datetime.now() + timedelta(hours=6)
     )
-    log("🕒 [Agentic Startup] Background Scheduler Online (Memory Heartbeat active).")
+    log("🕒 [Agentic Startup] Smart Scheduling Online (Per-User Cron & Global Sync active).")
     
     yield
-    scheduler.shutdown()
+    try:
+        scheduler.shutdown()
+    except:
+        pass
 
 # ACTUAL APP OBJECT (Lifespan attached)
 app = FastAPI(title="JobPilot Agent Service", version="1.0.0", lifespan=lifespan)
@@ -333,8 +440,8 @@ async def diagnostic():
             conn.close()
     except Exception as e:
         report["db_error"] = str(e)
-        
     return report
+
 log("🚀🚀🚀 [REVISION 30] JOBPILOT AGENT ENGINE IS LIVE AND AWAKE! 🚀🚀🚀")
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
@@ -354,64 +461,88 @@ async def heartbeat():
     await agentic_schedule_executor()
     return {"status": "success", "message": "Heartbeat triggered. Checking for notifications now!"}
 
+@app.delete("/agent/reset-jobs")
+async def reset_jobs(email: str = Query(...)):
+    """
+    Clears all jobs and applications for a specific user to allow a fresh start.
+    """
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return {"status": "error", "message": "Database connection failed."}
+        
+        cur = conn.cursor()
+        # Find user
+        cur.execute('SELECT id FROM "User" WHERE email = %s', (email,))
+        user = cur.fetchone()
+        if not user:
+            cur.close()
+            conn.close()
+            return {"status": "error", "message": "User not found."}
+        
+        user_id = user['id']
+        
+        # Delete related Applications first (ForeignKey constraint)
+        cur.execute('DELETE FROM "Application" WHERE user_id = %s', (user_id,))
+        
+        # Delete Jobs
+        cur.execute('DELETE FROM "Job" WHERE user_id = %s', (user_id,))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        log(f"🧹 [Reset] Cleared all data for {email}")
+        return {"status": "success", "message": f"Successfully cleared all jobs for {email}. Your pipeline is empty and ready for a fresh start!"}
+            
+    except Exception as e:
+        log(f"❌ [Reset Error] {e}")
+        return {"status": "error", "message": str(e)}
+
 @app.get("/agent/force-sweep")
 async def force_sweep(background_tasks: BackgroundTasks, email: str = "mamankumar333@gmail.com", token: Optional[str] = None):
-    """Forces an immediate job sweep and email digest for a specific user!"""
-    log(f"🚀 [Force Sweep] Triggering immediate search and email for {email}...")
+    """Trigger the COMPLETE AI engine: Inbox Sync + Job Search!"""
+    log(f"🚀 [Force Sweep] Triggering immediate engine for {email}...")
     
     try:
-        print(f"🕵️‍♂️ [FORCE-SWEEP] Step 1: Connecting to DB for {email}")
         conn = get_db_connection()
         if not conn: 
-            print("❌ [FORCE-SWEEP] Connection failed!")
-            return {"status": "error", "message": "Could not establish database connection."}
+            return {"status": "error", "message": "Database unreachable."}
             
         cur = conn.cursor()
-        print(f"🕵️‍♂️ [FORCE-SWEEP] Step 2: Querying User Table...")
         query = "SELECT * FROM \"User\" WHERE LOWER(email) = LOWER(%s)"
         cur.execute(query, (email,))
         user = cur.fetchone()
         
-        if user:
-            print(f"✅ [FORCE-SWEEP] Step 3: User FOUND! ID: {user.get('id')}")
-            # Check Resume count directly
-            cur.execute("SELECT COUNT(*) as exact_count FROM \"Resume\" WHERE user_id = %s", (user['id'],))
-            res_row = cur.fetchone()
-            resume_count = res_row.get('exact_count', 0) if res_row else 0
-            print(f"📊 [DATABASE AUDIT] Resumes for this user: {resume_count}")
-        else:
-            print(f"❌ [FORCE-SWEEP] Step 3: NO USER FOUND for {email}!")
+        if not user:
+            cur.close()
+            conn.close()
+            return {"status": "error", "message": f"User {email} not found."}
             
+        # Use provided token or fall back to DB stored refresh_token
+        r_token = token or user.get('refresh_token') or user.get('access_token')
+        
+        if not r_token:
+            cur.close()
+            conn.close()
+            return {"status": "error", "message": "No OAuth token found or provided. Please log in first."}
+
+        # 1. Trigger Inbox Sync (AWAITED so manual sweep shows data immediately)
+        # SILENT MODE: No emails will be sent during this manual user trigger!
+        await sync_gmail_inbox(user['id'], user['email'], r_token, silent=True)
+        
         cur.close()
         conn.close()
-
-        if not user: 
-            return {"status": "error", "message": f"User {email} not found in database."}
-
-        print(f"🕵️‍♂️ [FORCE-SWEEP] Step 4: Validating user preferences...")
-        roles = user.get('preferred_roles')
-        role = roles[0] if roles and len(roles) > 0 else "Software Engineer"
         
-        # Fire-and-Forget: Execute the long-running search in the background!
-        print(f"🕵️‍♂️ [FORCE-SWEEP] Step 5: Launching background daily_sweep task via FastAPI BackgroundTasks...")
-        # USING FASTAPI NATIVE BACKGROUND TASKS TO PREVENT GHOST CANCELLATIONS!
-        background_tasks.add_task(daily_sweep, {
-            "user_email": user['email'],
-            "user_id": user['id'],
-            "preferences": {"preferred_roles": [role], "location_preference": user.get('location_preference') or "Remote"},
-            "access_token": token or user.get('refresh_token') or user.get('access_token') # PROVISION THE TOKEN (Override with URL param if provided!)
-        })
-        
-        print(f"🏁 [FORCE-SWEEP] Step 6: Success response sent!")
+        log(f"✅ [Force Sweep] Inbox Sync initiated for {email} (SILENT)")
         return {
             "status": "success", 
-            "message": f"🚀 AI Agent Activated for {email}! The hunt has started in the background. Check your email in 2 minutes!"
+            "message": f"🚀 Inbox Sync Activated for {email}! Scanning your Gmail for new applications and updates..."
         }
+            
     except Exception as e:
-        import traceback
-        err_msg = f"CRITICAL CRASH: {str(e)}\n{traceback.format_exc()}"
-        print(f"❌ [FORCE-SWEEP ERROR] {err_msg}")
-        return {"status": "error", "message": str(e) if str(e) else "Internal Python Crash (check logs)"}
+        log(f"❌ [Force Sweep Error] {e}")
+        return {"status": "error", "message": str(e)}
 
 @app.get("/health")
 async def health():
@@ -991,9 +1122,9 @@ async def monitor_gmail(request: Dict, x_google_token: Optional[str] = Header(No
         print("MCP Tracking Error:", e)
         return {"status": "error", "message": str(e)}
 
-async def daily_sweep(request: any):
+async def daily_sweep(request: any, silent: bool = False):
     """
-    Triggers a daily agentic sweep: finds new jobs, stores them in DB, and sends a summary digest.
+    Triggers a daily agentic sweep: finds new jobs, stores them in DB, and sends a summary digest if silent is False.
     """
     # ABSOLUTE LOGICAL BRIDGE: Handle both raw string input and dictionary input!
     if isinstance(request, str):
@@ -1009,6 +1140,13 @@ async def daily_sweep(request: any):
     
     print(f"🧹 [Daily Sweep] Initiating for {user_email} (UserID: {user_id})")
     
+    # NEW: Sync the inbox BEFORE searching for new jobs to avoid duplicates!
+    if access_token and user_id:
+        try:
+            await sync_gmail_inbox(user_id, user_email, access_token)
+        except Exception as sync_err:
+            print(f"⚠️ [Sweep] Inbox pre-sync failed: {sync_err}")
+
     # 0. ABSOLUTE IDENTITY FULFILLMENT: Look up ID if missing!
     db_url_raw = os.getenv("DATABASE_URL", "")
     db_url = db_url_raw.split("?")[0] if "?" in db_url_raw else db_url_raw
@@ -1203,7 +1341,11 @@ async def daily_sweep(request: any):
 </body>
 </html>"""
 
-    # 5. Dispatch via Gmail MCP
+    # 5. Dispatch via Gmail MCP (SKIP IF SILENT)
+    if silent:
+        log(f"🤫 [Daily Sweep] {user_email}: Skipping email dispatch (Silent Mode).")
+        return {"status": "success", "summary": f"Found {len(found_jobs)} jobs. Dashboard updated (Silent Mode)."}
+
     res = await call_gmail_mcp("send_gmail", {
         "recipient": user_email,
         "subject": f"🔥 JobPilot: {len(found_jobs)} New Roles Found Today — Top Match Inside",
@@ -1212,6 +1354,208 @@ async def daily_sweep(request: any):
     })
     
     return {"status": "success", "summary": f"Found {len(found_jobs)} jobs. Email dispatched.", "mcp_result": res}
+
+
+async def global_inbox_sync_executor():
+    """
+    Periodic job that syncs inboxes for all users with a registered refresh_token.
+    This runs globally for all users every 6 hours.
+    """
+    log("🔄 [Global Sync] Initiating periodic inbox check for all users...")
+    
+    try:
+        # 1. Get all users with refresh tokens
+        conn = get_db_connection()
+        if not conn: return
+        cur = conn.cursor()
+        cur.execute('SELECT id, email, refresh_token FROM "User" WHERE refresh_token IS NOT NULL')
+        users_to_sync = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        if not users_to_sync:
+            log("ℹ️ [Global Sync] No users found with valid tokens.")
+            return
+
+        log(f"🔄 [Global Sync] Processing {len(users_to_sync)} authenticated users...")
+
+        async with httpx.AsyncClient() as client:
+            for user in users_to_sync:
+                # 2. Refresh Token
+                live_token = None
+                try:
+                    token_url = "https://oauth2.googleapis.com/token"
+                    payload = {
+                        "client_id": os.getenv("GOOGLE_CLIENT_ID"),
+                        "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
+                        "refresh_token": user['refresh_token'],
+                        "grant_type": "refresh_token"
+                    }
+                    token_res = (await client.post(token_url, data=payload)).json()
+                    live_token = token_res.get("access_token")
+                    if live_token:
+                        log(f"🔑 [Global Sync] Refreshed token for {user['email']}")
+                except Exception as ex:
+                    log(f"⚠️ [Global Sync] Token refresh failed for {user['email']}: {ex}")
+                    continue
+
+                if live_token:
+                    # 3. Synchronize Inbox (SILENT: No emails during background scans!)
+                    await sync_gmail_inbox(user['id'], user['email'], live_token, silent=True)
+                
+    except Exception as e:
+        log(f"❌ [Global Sync Error] {e}")
+
+async def sync_gmail_inbox(user_id: str, user_email: str, access_token: str, silent: bool = True):
+    """
+    Connects to the inbox, finds job-related emails, and updates the dashboard.
+    If silent is True, no notification email is sent.
+    """
+    get_agents() # Ensure singleton agents are ready!
+    
+    # Prevent multiple overlapping syncs for the same user
+    if user_id not in inbox_sync_locks:
+        inbox_sync_locks[user_id] = asyncio.Lock()
+    
+    async with inbox_sync_locks[user_id]:
+        log(f"🔄 [Inbox Sync] Synchronizing inbox for {user_email}...")
+        
+        try:
+            # 1. Fetch recent emails (last 6 hours as requested)
+            mcp_res = await call_gmail_mcp("sync_recent_emails", {"access_token": access_token, "hours": 6, "max_results": 100})
+            
+            log(f"DEBUG: mcp_res received. type={type(mcp_res)}")
+            
+            raw_emails = []
+            # Robust extraction from MCP CallToolResult
+            if mcp_res and hasattr(mcp_res, "content") and len(mcp_res.content) > 0:
+                try:
+                    content_text = mcp_res.content[0].text
+                    log(f"DEBUG: content_text excerpt: {content_text[:100]}...")
+                    if content_text.strip().lower() == "no mail":
+                        log(f"ℹ️ [Inbox Sync] No emails found in the last 6 hours for {user_email}.")
+                        return
+                    raw_emails = json.loads(content_text)
+                except Exception as parse_err:
+                    log(f"⚠️ [Inbox Sync] Failed to parse MCP content: {parse_err}")
+                    return
+            log(f"DEBUG: raw_emails type: {type(raw_emails)}, count: {len(raw_emails)}")
+            
+            # Robust mapping: Ensure raw_emails is ALWAYS a list of dictionaries
+            if isinstance(raw_emails, dict):
+                # If we accidentally got one email instead of a list, wrap it!
+                raw_emails = [raw_emails]
+            elif not isinstance(raw_emails, list):
+                raw_emails = []
+
+            # Ensure we have a list of dictionary objects (emails)
+            filtered_emails = [e for e in raw_emails if isinstance(e, dict)]
+            log(f"DEBUG: filtered_emails count: {len(filtered_emails)}")
+
+            if not filtered_emails:
+                log(f"ℹ️ [Inbox Sync] No new emails found in the last 6 hours for {user_email}.")
+                return
+
+            # LOG TITLES FOR DEBUGGING
+            titles = [e.get('subject', 'No Subject') for e in filtered_emails[:5]]
+            log(f"📥 [Inbox Sync] Found {len(filtered_emails)} total emails. First few: {', '.join(titles)}")
+            log(f"📥 [Inbox Sync] Analyzing {len(filtered_emails)} found emails for {user_email}...")
+            
+            # 2. Classify and Extract
+            results = await inbox_agent.classify_and_extract(filtered_emails)
+            
+            if not results:
+                log(f"ℹ️ [Inbox Sync] No relevant updates found for {user_email}.")
+                return
+
+            # 3. Update Database
+            conn = get_db_connection()
+            if not conn: return
+            cur = conn.cursor()
+            
+            updated_count = 0
+            new_count = 0
+            
+            for res in results:
+                if not isinstance(res, dict): continue
+                cls = res.get('classification', 'irrelevant')
+                if cls == 'irrelevant': continue
+                
+                company = res.get('company_name')
+                role = res.get('job_title')
+                if not company or not role: continue
+                
+                # Find if job exists
+                cur.execute('SELECT id, status FROM "Job" WHERE user_id = %s AND (LOWER(company) LIKE %s AND LOWER(title) LIKE %s)', (user_id, f"%{company.lower()}%", f"%{role.lower()}%"))
+                job_row = cur.fetchone()
+                
+                if not job_row:
+                    job_id = str(uuid.uuid4())
+                    init_status = 'found' 
+                    if cls == 'application_confirmation': init_status = 'applied'
+                    elif cls == 'interview_invite': init_status = 'interview_scheduled'
+                    elif cls == 'status_update': init_status = 'responded'
+                    elif cls == 'rejection': init_status = 'rejected'
+                    elif cls == 'invitation_to_apply': init_status = 'inbox_lead' 
+                    
+                    db_safe_app_status = init_status
+                    if init_status == 'inbox_lead': db_safe_app_status = 'found'
+                    
+                    al = res.get('apply_link', '')
+                    loc = res.get('location', 'Remote')
+                    sal = res.get('salary_range', '')
+                    desc = res.get('description', '')
+                    
+                    # AI Scoring
+                    cur.execute('SELECT id, parsed_skills FROM "Resume" WHERE user_id = %s AND is_active = TRUE LIMIT 1', (user_id,))
+                    res_row = cur.fetchone()
+                    
+                    match_score = 0
+                    match_reason = f"Extracted from Gmail Inbox of {user_email}. Category: {cls}"
+                    if res_row and coordinator:
+                        try:
+                            score_res = await coordinator.score_job({"title": role, "company": company, "description": desc}, res_row.get('parsed_skills', []))
+                            match_score = score_res.get('score', 0)
+                            match_reason = score_res.get('reason', match_reason)
+                        except: pass
+                    
+                    # Save Job
+                    cur.execute("""
+                        INSERT INTO "Job" 
+                        (id, user_id, title, company, status, found_at, apply_url, location, salary_range, description, match_score, match_reason, source_platform) 
+                        VALUES (%s, %s, %s, %s, %s, NOW(), %s, %s, %s, %s, %s, %s, 'gmail')
+                    """, (job_id, user_id, role, company, init_status, al, loc, sal, desc, match_score, match_reason))
+                    
+                    # Save Application
+                    if res_row:
+                        app_id = str(uuid.uuid4())
+                        cur.execute("""
+                            INSERT INTO "Application" (id, user_id, job_id, resume_id, status, applied_at, created_at, updated_at)
+                            VALUES (%s, %s, %s, %s, %s, NOW(), NOW(), NOW())
+                        """, (app_id, user_id, job_id, res_row['id'], db_safe_app_status))
+                        new_count += 1
+                
+                else: # Existing job - update status
+                    job_id = job_row['id']
+                    current_status = job_row.get('status', 'found')
+                    new_status = None
+                    if cls == 'interview_invite': new_status = 'interview_scheduled'
+                    elif cls == 'rejection': new_status = 'rejected'
+                    elif cls == 'status_update': new_status = 'responded'
+                    elif cls == 'application_confirmation': new_status = 'applied'
+                    elif cls == 'invitation_to_apply' and current_status == 'found': new_status = 'inbox_lead'
+                    
+                    if new_status and new_status != current_status:
+                        # 2. Update the Application record
+                        cur.execute('UPDATE "Application" SET status = %s, updated_at = NOW() WHERE user_id = %s AND job_id = %s', (new_status, user_id, job_id))
+                        updated_count += 1
+                    
+            conn.commit()
+            cur.close()
+            conn.close()
+            log(f"✅ [Inbox Sync] {user_email}: Created {new_count} new entries, updated {updated_count} status.")
+        except Exception as e:
+            log(f"❌ [Inbox Sync Error] {user_email}: {e}")
 
 
 @app.post("/agent/recalculate-scores")

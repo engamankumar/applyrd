@@ -4,6 +4,7 @@ import { useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { useSession } from "next-auth/react"
 
+import ReactMarkdown from "react-markdown"
 import { 
   ArrowLeft, Briefcase, DollarSign, Clock, Check, Star, Share2,
   ExternalLink, Sparkles, Zap, MessageSquare, FileText, Users, Copy, RefreshCw,
@@ -217,9 +218,9 @@ export default function JobDetailClient({ job, userEmail }: { job: any, userEmai
             href={job.applyUrl && job.applyUrl.trim() !== "" && job.applyUrl !== "#" ? job.applyUrl : `https://www.google.com/search?q=${encodeURIComponent(job.company + " " + job.title + " careers")}`} 
             target="_blank" 
             rel="noopener noreferrer"
-            className="inline-flex items-center justify-center whitespace-nowrap signature-gradient h-12 px-8 rounded-xl font-bold text-sm text-white shadow-xl shadow-primary/10 hover:opacity-90 transition-all"
+            className={`inline-flex items-center justify-center whitespace-nowrap h-12 px-8 rounded-xl font-bold text-sm text-white shadow-xl transition-all ${job.applyUrl && job.applyUrl !== '#' ? 'bg-primary shadow-primary/20 scale-105 ring-2 ring-primary/20' : 'signature-gradient shadow-primary/10 hover:opacity-90'}`}
           >
-            Apply via Broker <ExternalLink size={16} className="ml-2" />
+            {job.applyUrl && job.applyUrl !== '#' ? "Apply via Inbox Link" : "Apply via Broker"} <ExternalLink size={16} className="ml-2" />
           </a>
         </div>
       </div>
@@ -272,8 +273,10 @@ export default function JobDetailClient({ job, userEmail }: { job: any, userEmai
               <motion.div key="overview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
                 className="p-10 rounded-[2.5rem] bg-surface-container-lowest border border-white shadow-sm">
                 <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-8">Job Description</div>
-                <div className="prose prose-neutral max-w-none text-on-surface/80 leading-[1.8] font-medium text-base whitespace-pre-line">
-                  {job.description}
+                <div className="prose prose-neutral max-w-none text-on-surface/80 leading-[1.8] font-medium text-base">
+                  <ReactMarkdown>
+                    {job.description}
+                  </ReactMarkdown>
                 </div>
               </motion.div>
             )}

@@ -18,15 +18,8 @@ class CoordinatorAgent:
         except FileNotFoundError:
             self.system_prompt = "You are JobPilot Coordinator. Delegate tasks to specialist agents."
         
-        self.models_to_try = [
-            "models/gemini-3.1-flash-lite-preview",
-            "models/gemini-3-flash-preview",
-            "models/gemini-2.5-flash-lite",
-            "models/gemini-2.0-flash-lite-001",
-            "models/gemini-2.0-flash",
-            "models/gemini-1.5-flash",
-            "models/gemini-pro-latest"
-        ]
+        from agents.config import CASCADE_MODELS
+        self.models_to_try = CASCADE_MODELS
 
     def _ai(self, prompt: str) -> str:
         """Internal helper for Gemini calls."""

@@ -65,6 +65,7 @@ export default function ApplicationsContent({ initialJobs, stats, resumeText }: 
   }, [searchParams])
 
   const columns = [
+    { id: "inbox_lead", label: "Gmail Inbox", color: "bg-teal-500" },
     { id: "found", label: "Found", color: "bg-primary" },
     { id: "applied", label: "Applied", color: "bg-indigo-400" },
     { id: "responded", label: "Responded", color: "bg-teal-400" },
@@ -73,6 +74,7 @@ export default function ApplicationsContent({ initialJobs, stats, resumeText }: 
   ]
 
   const pipeline: Record<string, any[]> = {
+    inbox_lead: jobs.filter(j => j.status === "inbox_lead" && (j.title.toLowerCase().includes(query.toLowerCase()) || j.company.toLowerCase().includes(query.toLowerCase()))),
     found: jobs.filter(j => (!j.status || j.status === "found") && (j.title.toLowerCase().includes(query.toLowerCase()) || j.company.toLowerCase().includes(query.toLowerCase()))),
     applied: jobs.filter(j => j.status === "applied" && (j.title.toLowerCase().includes(query.toLowerCase()) || j.company.toLowerCase().includes(query.toLowerCase()))),
     responded: jobs.filter(j => j.status === "responded" && (j.title.toLowerCase().includes(query.toLowerCase()) || j.company.toLowerCase().includes(query.toLowerCase()))),

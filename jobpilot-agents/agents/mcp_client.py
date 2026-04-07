@@ -9,7 +9,8 @@ async def call_gmail_mcp(tool_name: str, arguments: dict):
     This demonstrates real Model Context Protocol usage.
     """
     # Use system python on Cloud Run
-    python_path = "python3"
+    import sys
+    python_path = sys.executable or "python3"
     server_params = StdioServerParameters(
         command=python_path,
         args=["agents/mcp_gmail_server.py"],
