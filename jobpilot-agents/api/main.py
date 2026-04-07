@@ -1420,10 +1420,49 @@ async def sync_gmail_inbox(user_id: str, user_email: str, access_token: str, sil
     async with inbox_sync_locks[user_id]:
         log(f"🔄 [Inbox Sync] Synchronizing inbox for {user_email}...")
         
+        # ABSOLUTE AUTH BRIDGE: If the access_token is potentially expired or missing,
+        # try to upgrade it using the refresh_token from the DB!
+        current_token = access_token
+        
         try:
             # 1. Fetch recent emails (last 6 hours as requested)
-            mcp_res = await call_gmail_mcp("sync_recent_emails", {"access_token": access_token, "hours": 6, "max_results": 100})
+            mcp_res = await call_gmail_mcp("sync_recent_emails", {"access_token": current_token, "hours": 6, "max_results": 100})
             
+            # If we get a 401 or an error suggesting expired credentials, try to refresh via DB
+            mcp_error_str = str(mcp_res).lower()
+            if "invalid_grant" in mcp_error_str or "unauthorized" in mcp_error_str or "401" in mcp_error_str or "credentials do not contain" in mcp_error_str:
+                log(f"🔑 [Inbox Sync] Session token expired for {user_email}. Attempting DB refresh...")
+                try:
+                    conn = get_db_connection()
+                    if conn:
+                        cur = conn.cursor()
+                        cur.execute('SELECT refresh_token FROM "User" WHERE id = %s', (user_id,))
+                        row = cur.fetchone()
+                        db_refresh_token = row['refresh_token'] if row else None
+                        cur.close()
+                        conn.close()
+                        
+                        if db_refresh_token:
+                            log(f"🔄 [Inbox Sync] Found refresh_token in DB. Requesting new access_token...")
+                            import httpx
+                            token_url = "https://oauth2.googleapis.com/token"
+                            payload = {
+                                "client_id": os.getenv("GOOGLE_CLIENT_ID"),
+                                "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
+                                "refresh_token": db_refresh_token,
+                                "grant_type": "refresh_token"
+                            }
+                            async with httpx.AsyncClient() as client:
+                                refresh_res = await client.post(token_url, data=payload)
+                                new_tokens = refresh_res.json()
+                                current_token = new_tokens.get("access_token")
+                                if current_token:
+                                    log(f"✅ [Inbox Sync] Successfully refreshed token via DB! Retrying sync...")
+                                    # Retry the MCP call with the fresh token
+                                    mcp_res = await call_gmail_mcp("sync_recent_emails", {"access_token": current_token, "hours": 6, "max_results": 100})
+                except Exception as refresh_err:
+                    log(f"⚠️ [Inbox Sync] Token refresh fallback failed: {refresh_err}")
+
             log(f"DEBUG: mcp_res received. type={type(mcp_res)}")
             
             raw_emails = []
