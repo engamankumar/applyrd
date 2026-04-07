@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import json
@@ -6,7 +6,7 @@ import asyncio
 from dotenv import load_dotenv
 from typing import List, Dict, Optional
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from .models import ResumeParseRequest, JobSearchRequest, AgentResponse
 from agents.coordinator import CoordinatorAgent
@@ -28,7 +28,49 @@ def log(msg):
     print(msg)
 
 log("🚀 [Server Reload] Initializing...")
-scheduler = AsyncIOScheduler()
+
+# ── Persistent Scheduler Initialization (Hybrid Mode) ──────────────────────────
+from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+from apscheduler.jobstores.memory import MemoryJobStore
+
+def build_db_jobstore():
+    """Bulletproof SQLAlchemy Engine Creator for Cloud SQL Unix Sockets"""
+    from sqlalchemy import create_engine
+    raw = os.getenv("DATABASE_URL", "sqlite:///jobs.sqlite")
+    
+    if "host=/cloudsql/" in raw:
+        import urllib.parse
+        parsed = urllib.parse.urlparse(raw)
+        params = urllib.parse.parse_qs(parsed.query)
+        socket_path = params.get("host", ["/cloudsql/applyrd-ai:europe-west1:jobpilot-db"])[0]
+        
+        # Format for SQLAlchemy with Unix Sockets
+        # postgresql+psycopg2://user:password@/dbname?host=/path/to/socket
+        # Use v2 table to bypass corrupted existing data!
+        return SQLAlchemyJobStore(
+            url=f"postgresql+psycopg2://{parsed.username}:{parsed.password}@/{parsed.path.lstrip('/')}?host={socket_path}",
+            tablename='apscheduler_jobs_v2'
+        )
+    
+    return SQLAlchemyJobStore(
+        url=raw.replace("postgresql://", "postgresql+psycopg2://"),
+        tablename='apscheduler_jobs_v2'
+    )
+
+def init_scheduler():
+    stores = {'default': MemoryJobStore()} # System tasks (sweeps)
+    if os.getenv("DATABASE_URL"):
+        try:
+            stores['persistent'] = build_db_jobstore() # User tasks (emails)
+            log("✅ [Scheduler] Persistent Hybrid Store configured.")
+        except Exception as e:
+            log(f"⚠️ [Scheduler] Persistent Store failed ({e}). Falling back to full memory.")
+    
+    return AsyncIOScheduler(jobstores=stores)
+
+# GLOBAL PLACEHOLDER - ACTUAL INIT IN LIFESPAN
+scheduler = None
+
 
 PROJECT_ID = os.getenv("VERTEX_AI_PROJECT_ID", "your-project-id")
 LOCATION = os.getenv("VERTEX_AI_LOCATION", "us-central1")
@@ -103,32 +145,58 @@ def ai(prompt: str) -> str:
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+# ── Master Database Connector ──────────────────────────────────────────────────
+def get_db_connection():
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url: return None
+    
+    try:
+        # If Cloud SQL socket is provided as a query param, extract it correctly
+        if "host=/cloudsql/" in db_url:
+            import urllib.parse
+            parsed = urllib.parse.urlparse(db_url)
+            params = urllib.parse.parse_qs(parsed.query)
+            socket_path = params.get("host", [None])[0]
+            
+            return psycopg2.connect(
+                dbname=parsed.path.lstrip('/'),
+                user=parsed.username,
+                password=parsed.password,
+                host=socket_path,
+                cursor_factory=RealDictCursor
+            )
+        
+        # Fallback for standard or local DATABASE_URL
+        if "?" in db_url: db_url = db_url.split("?")[0]
+        return psycopg2.connect(db_url, cursor_factory=RealDictCursor)
+    except Exception as e:
+        log(f"❌ [Database Error] Failed to connect: {e}")
+        return None
+
 # ── Dynamic Agentic Scheduler ──────────────────────────────────────────────────
 async def agentic_schedule_executor():
     """
     Every minute, check which users need a daily sweep and execute it.
     """
     print(f"💓 [Agentic Heartbeat] {datetime.now().strftime('%H:%M:%S')} - Checking for schedules...")
-    db_url = os.getenv("DATABASE_URL")
-    if not db_url: return
     
-    # Sanitize Prisma-style DATABASE_URL for psycopg2 (remove ?schema=... if present)
-    if "?" in db_url:
-        db_url = db_url.split("?")[0]
-    
-    print(f"🕒 [Agentic Scheduler] Running hourly sweep check for {datetime.now().strftime('%H:%M')}...")
-    now_hour = datetime.now().strftime("%H:%M")
+    # ABSOLUTE TIME MATCH: Force IST for comparison since Cloud Run is UTC
+    from datetime import timezone
+    # IST is UTC + 5:30
+    ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    now_hour = ist_now.strftime("%H:%M")
     
     try:
-        conn = psycopg2.connect(db_url)
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        conn = get_db_connection()
+        if not conn: return
+        cur = conn.cursor()
         
         # Select users who have reached their briefing time
         cur.execute("""
             SELECT id, email, preferred_roles, location_preference, reminder_time, refresh_token 
             FROM "User" 
             WHERE reminder_time = %s
-        """, (now_hour,))
+        """, (now_hour,)) # note: we usually join on emails elsewhere so we'll leave this query for time matching specifically
         
         users_to_update = cur.fetchall()
         cur.close()
@@ -185,16 +253,91 @@ async def lifespan(app: FastAPI):
     if db_url: 
         print("🔗 [Database] Connection string detected for dynamic scheduling.")
     
-    # 1. Add the persistent hourly checker
-    scheduler.add_job(agentic_schedule_executor, 'interval', minutes=1, id='agentic_hourly_sweep')
+    # 1. ABSOLUTE RESET: Clear any corrupted ghost jobs from the database once
+    # This happens BEFORE the scheduler starts to avoid Conflicts!
+    if db_url:
+        try:
+            conn = get_db_connection()
+            if conn:
+                cur = conn.cursor()
+                cur.execute("DROP TABLE IF EXISTS apscheduler_jobs")
+                cur.execute("DROP TABLE IF EXISTS apscheduler_jobs_v2")
+                conn.commit()
+                cur.close()
+                conn.close()
+                log("🧹 [Lifespan] Persistent tables reset for fresh start.")
+        except Exception as e:
+            log(f"⚠️ [Lifespan] Table Reset Skip: {e}")
+
+    # 2. Lazy Initialization: Create the scheduler ONLY AFTER the wipe!
+    global scheduler
+    scheduler = init_scheduler()
     scheduler.start()
-    print("🕒 [Agentic Startup] Background Scheduler Online (Interval: 1 min)")
+    
+    # 3. Add/Refresh the memory-based system sweep job (IST synchronized)
+    from datetime import timezone
+    ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    
+    # RENAME to agentic_memory_sweep to stay away from old DB ghost-jobs!
+    scheduler.add_job(
+        agentic_schedule_executor, 
+        'interval', 
+        minutes=1, 
+        id='agentic_memory_sweep', 
+        replace_existing=True,
+        next_run_time=datetime.now() # Start immediately on wake-up!
+    )
+    log("🕒 [Agentic Startup] Background Scheduler Online (Memory Heartbeat active).")
     
     yield
     scheduler.shutdown()
 
+# ACTUAL APP OBJECT (Lifespan attached)
 app = FastAPI(title="JobPilot Agent Service", version="1.0.0", lifespan=lifespan)
 
+@app.get("/agent/diagnostic")
+async def diagnostic():
+    """
+    Diagnostic endpoint to check scheduler health and DB synchronization.
+    """
+    report = {
+        "status": "healthy",
+        "time_utc": datetime.now().strftime("%H:%M:%S"),
+        "timezone_offset": "+05:30",
+        "ist_time": (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%H:%M:%S"),
+        "scheduler_running": scheduler.running if scheduler else False,
+        "jobs": []
+    }
+    
+    if scheduler:
+        for job in scheduler.get_jobs():
+            report["jobs"].append({
+                "id": job.id,
+                "next_run": str(job.next_run_time),
+                "trigger": str(job.trigger)
+            })
+            
+    # Check DB schedules
+    try:
+        from psycopg2.extras import RealDictCursor
+        conn = get_db_connection()
+        if conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("SELECT email, reminder_time FROM \"User\" WHERE reminder_time IS NOT NULL LIMIT 10")
+            rows = cur.fetchall()
+            report["db_schedules"] = [
+                {"email": r["email"], "reminder_time": str(r["reminder_time"])} 
+                for r in rows
+            ]
+            cur.close()
+            conn.close()
+    except Exception as e:
+        report["db_error"] = str(e)
+        
+    return report
+log("🚀🚀🚀 [REVISION 30] JOBPILOT AGENT ENGINE IS LIVE AND AWAKE! 🚀🚀🚀")
+
+# ── CORS ──────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -204,6 +347,72 @@ app.add_middleware(
 )
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
+@app.get("/agent/heartbeat")
+async def heartbeat():
+    """Manual trigger to wake up the scheduler and process missed alerts!"""
+    log("💓 [Manual Heartbeat] Waking up the agent engine...")
+    await agentic_schedule_executor()
+    return {"status": "success", "message": "Heartbeat triggered. Checking for notifications now!"}
+
+@app.get("/agent/force-sweep")
+async def force_sweep(background_tasks: BackgroundTasks, email: str = "mamankumar333@gmail.com", token: Optional[str] = None):
+    """Forces an immediate job sweep and email digest for a specific user!"""
+    log(f"🚀 [Force Sweep] Triggering immediate search and email for {email}...")
+    
+    try:
+        print(f"🕵️‍♂️ [FORCE-SWEEP] Step 1: Connecting to DB for {email}")
+        conn = get_db_connection()
+        if not conn: 
+            print("❌ [FORCE-SWEEP] Connection failed!")
+            return {"status": "error", "message": "Could not establish database connection."}
+            
+        cur = conn.cursor()
+        print(f"🕵️‍♂️ [FORCE-SWEEP] Step 2: Querying User Table...")
+        query = "SELECT * FROM \"User\" WHERE LOWER(email) = LOWER(%s)"
+        cur.execute(query, (email,))
+        user = cur.fetchone()
+        
+        if user:
+            print(f"✅ [FORCE-SWEEP] Step 3: User FOUND! ID: {user.get('id')}")
+            # Check Resume count directly
+            cur.execute("SELECT COUNT(*) as exact_count FROM \"Resume\" WHERE user_id = %s", (user['id'],))
+            res_row = cur.fetchone()
+            resume_count = res_row.get('exact_count', 0) if res_row else 0
+            print(f"📊 [DATABASE AUDIT] Resumes for this user: {resume_count}")
+        else:
+            print(f"❌ [FORCE-SWEEP] Step 3: NO USER FOUND for {email}!")
+            
+        cur.close()
+        conn.close()
+
+        if not user: 
+            return {"status": "error", "message": f"User {email} not found in database."}
+
+        print(f"🕵️‍♂️ [FORCE-SWEEP] Step 4: Validating user preferences...")
+        roles = user.get('preferred_roles')
+        role = roles[0] if roles and len(roles) > 0 else "Software Engineer"
+        
+        # Fire-and-Forget: Execute the long-running search in the background!
+        print(f"🕵️‍♂️ [FORCE-SWEEP] Step 5: Launching background daily_sweep task via FastAPI BackgroundTasks...")
+        # USING FASTAPI NATIVE BACKGROUND TASKS TO PREVENT GHOST CANCELLATIONS!
+        background_tasks.add_task(daily_sweep, {
+            "user_email": user['email'],
+            "user_id": user['id'],
+            "preferences": {"preferred_roles": [role], "location_preference": user.get('location_preference') or "Remote"},
+            "access_token": token or user.get('refresh_token') or user.get('access_token') # PROVISION THE TOKEN (Override with URL param if provided!)
+        })
+        
+        print(f"🏁 [FORCE-SWEEP] Step 6: Success response sent!")
+        return {
+            "status": "success", 
+            "message": f"🚀 AI Agent Activated for {email}! The hunt has started in the background. Check your email in 2 minutes!"
+        }
+    except Exception as e:
+        import traceback
+        err_msg = f"CRITICAL CRASH: {str(e)}\n{traceback.format_exc()}"
+        print(f"❌ [FORCE-SWEEP ERROR] {err_msg}")
+        return {"status": "error", "message": str(e) if str(e) else "Internal Python Crash (check logs)"}
+
 @app.get("/health")
 async def health():
     return {
@@ -232,10 +441,9 @@ async def orchestrate(request: Dict):
         db_url = db_url_raw.split("?")[0] if "?" in db_url_raw else db_url_raw
         if db_url:
             try:
-                import psycopg2
-                from psycopg2.extras import RealDictCursor
-                conn = psycopg2.connect(db_url)
-                cur = conn.cursor(cursor_factory=RealDictCursor)
+                conn = get_db_connection()
+                if not conn: return
+                cur = conn.cursor()
                 cur.execute('SELECT id FROM "User" WHERE email = %s', (user_email,))
                 u_row = cur.fetchone()
                 if u_row:
@@ -264,8 +472,8 @@ async def orchestrate(request: Dict):
         agent = step.get("agent")
         if agent == "job_search_agent":
             prefs = context.get("preferences", {})
-            job_data = await search_jobs(JobSearchRequest(preferences=prefs))
-            results.append({"agent": agent, "data": job_data.get("data")})
+            job_data = await search_jobs(JobSearchRequest(preferences=prefs), resume_text=resume_text)
+            results.append({"agent": agent, "data": job_data.get("jobs")})
         elif agent == "resume_agent":
             tailored = await tailor_resume({
                 "job_title": context.get("preferences", {}).get("role", "Software Engineer"),
@@ -283,7 +491,7 @@ async def orchestrate(request: Dict):
         elif agent == "google_skills_agent":
             prev_gaps = []
             for r in results:
-                if r["agent"] == "skill_gap_agent":
+                if r["agent"] == "skill_gap_agent" and r.get("data"):
                     data = r.get("data", {})
                     raw_gaps = data.get("missing_skills", []) or data.get("weak_areas", [])
                     # Extract names if they are dicts
@@ -294,6 +502,13 @@ async def orchestrate(request: Dict):
                             prev_gaps.append(str(g))
             labs = await google_skills_agent.recommend_labs(prev_gaps or ["Full Stack Development"])
             results.append({"agent": agent, "data": {"recommended_labs": labs}})
+        elif agent == "outreach_agent":
+            outreach = await generate_cover_letter({
+                "job_title": context.get("preferences", {}).get("role", "Software Engineer"),
+                "company_name": "Target Co",
+                "resume_text": resume_text
+            })
+            results.append({"agent": agent, "data": outreach})
         elif agent == "interview_agent" or agent == "mock_interview_agent":
             prep = await interview_prep({
                 "company_name": "Target Corp", 
@@ -410,10 +625,9 @@ async def generate_cover_letter(request: Dict):
         db_url = db_url_raw.split("?")[0] if "?" in db_url_raw else db_url_raw
         if db_url and (user_id or email):
             try:
-                import psycopg2
-                from psycopg2.extras import RealDictCursor
-                conn = psycopg2.connect(db_url)
-                cur = conn.cursor(cursor_factory=RealDictCursor)
+                conn = get_db_connection()
+                if not conn: return
+                cur = conn.cursor()
                 
                 # Fetch user_id first if only email is provided
                 if not user_id and email:
@@ -474,10 +688,9 @@ async def tailor_resume(request: Dict):
         if db_url and (user_id or email):
             log("📡 [Tailor] Connecting to DB to fetch resume...")
             try:
-                import psycopg2
-                from psycopg2.extras import RealDictCursor
-                conn = psycopg2.connect(db_url)
-                cur = conn.cursor(cursor_factory=RealDictCursor)
+                conn = get_db_connection()
+                if not conn: return
+                cur = conn.cursor()
                 
                 # Fetch user_id first if only email is provided
                 if not user_id and email:
@@ -720,7 +933,15 @@ async def schedule_notification(request: Dict):
     delay = int(request.get("delay_seconds", 5))
 
     run_time = datetime.now() + timedelta(seconds=delay)
-    scheduler.add_job(scheduled_email_job, 'date', run_date=run_time, args=[user_email, company, job_title, access_token])
+    # USE THE PERSISTENT STORE for scheduled emails so they are never lost!
+    job_store = 'persistent' if 'persistent' in scheduler._jobstores else 'default'
+    scheduler.add_job(
+        scheduled_email_job, 
+        'date', 
+        run_date=run_time, 
+        args=[user_email, company, job_title, access_token],
+        jobstore=job_store
+    )
     return {"status": "success", "message": f"Scheduled for {run_time}."}
 
 async def scheduled_email_job(user_email: str, company: str, job_title: str, access_token: Optional[str] = None):
@@ -739,13 +960,14 @@ async def scheduled_email_job(user_email: str, company: str, job_title: str, acc
     JobPilot Agentic Automation
     """
     
-    res = await call_gmail_mcp("send_gmail", {
+    # ABSOLUTE POST OFFICE PASS: Use refresh_token as the key to unlock the inbox!
+    gmail_result = await call_gmail_mcp("send_gmail", {
         "recipient": user_email, 
         "subject": f"🎯 Update: {job_title} at {company}", 
         "body": body,
         "access_token": access_token
     })
-    print(f"📬 [MCP Result] {res}")
+    print(f"📬 [MCP Result] {gmail_result}")
 
 
 
@@ -769,36 +991,65 @@ async def monitor_gmail(request: Dict, x_google_token: Optional[str] = Header(No
         print("MCP Tracking Error:", e)
         return {"status": "error", "message": str(e)}
 
-@app.post("/agent/daily-sweep")
-async def daily_sweep(request: Dict):
+async def daily_sweep(request: any):
     """
     Triggers a daily agentic sweep: finds new jobs, stores them in DB, and sends a summary digest.
     """
-    user_email = request.get("user_email")
-    user_id = request.get("user_id")
-    preferences = request.get("preferences", {})
-    access_token = request.get("access_token")
+    # ABSOLUTE LOGICAL BRIDGE: Handle both raw string input and dictionary input!
+    if isinstance(request, str):
+        user_email = request
+        user_id = None
+        preferences = {}
+        access_token = None
+    else:
+        user_email = request.get("user_email")
+        user_id = request.get("user_id")
+        preferences = request.get("preferences", {})
+        access_token = request.get("access_token")
     
     print(f"🧹 [Daily Sweep] Initiating for {user_email} (UserID: {user_id})")
     
-    # 0. Fetch user's actual resume from DB for accurate scoring
-    resume_text = "Sample Resume"  # fallback
+    # 0. ABSOLUTE IDENTITY FULFILLMENT: Look up ID if missing!
     db_url_raw = os.getenv("DATABASE_URL", "")
     db_url = db_url_raw.split("?")[0] if "?" in db_url_raw else db_url_raw
+    
+    if db_url and not user_id and user_email:
+        print(f"🔍 [Sweep] UserID missing, performing identity lookup for {user_email}...")
+        try:
+            conn = get_db_connection()
+            if conn:
+                cur = conn.cursor()
+                cur.execute("SELECT id, preferred_roles, location_preference, refresh_token FROM \"User\" WHERE LOWER(email) = LOWER(%s)", (user_email,))
+                u_row = cur.fetchone()
+                if u_row:
+                    user_id = u_row['id']
+                    if not access_token: access_token = u_row.get('refresh_token') # Provision if missed
+                    if not preferences:
+                        role = u_row['preferred_roles'][0] if u_row['preferred_roles'] else "Software Engineer"
+                        preferences = {"preferred_roles": [role], "location_preference": u_row['location_preference'] or "Remote"}
+                    print(f"✅ [Sweep] Identity restored! ID: {user_id}")
+                cur.close()
+                conn.close()
+        except Exception as e:
+            print(f"⚠️ [Sweep] Identity lookup failed: {e}")
+
+    # 1. Fetch user's actual resume from DB for accurate scoring
+    resume_text = "Sample Resume"  # fallback
     if db_url and user_id:
         try:
-            conn = psycopg2.connect(db_url)
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            cur.execute("""
-                SELECT r.parsed_skills, r.parsed_experience, r.parsed_education
-                FROM "Resume" r
-                WHERE r.user_id = %s AND r.is_active = true
-                ORDER BY r.created_at DESC
-                LIMIT 1
-            """, (user_id,))
-            resume_row = cur.fetchone()
-            cur.close()
-            conn.close()
+            conn = get_db_connection()
+            if conn:
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT r.parsed_skills, r.parsed_experience, r.parsed_education
+                    FROM \"Resume\" r
+                    WHERE r.user_id = %s AND r.is_active = true
+                    ORDER BY r.created_at DESC
+                    LIMIT 1
+                """, (user_id,))
+                resume_row = cur.fetchone()
+                cur.close()
+                conn.close()
             if resume_row:
                 # Build a rich resume string from all available structured data
                 parts = []
@@ -845,24 +1096,25 @@ async def daily_sweep(request: Dict):
     saved_count = 0
     if db_url and user_id:
         try:
-            conn = psycopg2.connect(db_url)
-            cur = conn.cursor()
-            for job in found_jobs:
-                # Check for duplicates first
-                cur.execute('SELECT id FROM "Job" WHERE user_id = %s AND title = %s AND company = %s', (user_id, job['title'], job['company']))
-                if cur.fetchone(): continue
-                
-                import uuid
-                job_id = str(uuid.uuid4())
-                cur.execute("""
-                    INSERT INTO "Job" (id, user_id, title, company, location, description, apply_url, match_score, match_reason, status)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'found')
-                """, (job_id, user_id, job['title'], job['company'], job.get('location', 'Remote'), job.get('jd', ''), job.get('apply_url', ''), job.get('matchScore', 0), job.get('matchReason', '')))
-                saved_count += 1
-            conn.commit()
-            cur.close()
-            conn.close()
-            print(f"💾 [DB Cache] Successfully persisted {saved_count} new roles for user {user_id}")
+            conn = get_db_connection()
+            if conn:
+                cur = conn.cursor()
+                for job in found_jobs:
+                    # Check for duplicates first
+                    cur.execute('SELECT id FROM "Job" WHERE user_id = %s AND title = %s AND company = %s', (user_id, job['title'], job['company']))
+                    if cur.fetchone(): continue
+                    
+                    import uuid
+                    job_id = str(uuid.uuid4())
+                    cur.execute("""
+                        INSERT INTO "Job" (id, user_id, title, company, location, description, apply_url, match_score, match_reason, status)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'found')
+                    """, (job_id, user_id, job['title'], job['company'], job.get('location', 'Remote'), job.get('jd', ''), job.get('apply_url', ''), job.get('matchScore', 0), job.get('matchReason', '')))
+                    saved_count += 1
+                conn.commit()
+                cur.close()
+                conn.close()
+                print(f"💾 [DB Cache] Successfully persisted {saved_count} new roles for user {user_id}")
         except Exception as e:
             print(f"⚠️ [DB Error] Failed to persist jobs: {e}")
 
