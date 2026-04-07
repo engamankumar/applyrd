@@ -13,7 +13,7 @@ async def call_gmail_mcp(tool_name: str, arguments: dict):
     server_params = StdioServerParameters(
         command=python_path,
         args=["agents/mcp_gmail_server.py"],
-        env=None
+        env=os.environ.copy() # INHERIT ALL CREDENTIALS FOR THE OAUTH2 HANDSHAKE!
     )
     
     try:

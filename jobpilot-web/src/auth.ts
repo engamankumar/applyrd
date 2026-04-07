@@ -34,4 +34,31 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return session
     },
   },
+  events: {
+    async signIn({ user, account }: any) {
+      if (account?.provider === "google") {
+        const { prisma } = await import("@/lib/prisma")
+        
+        try {
+          console.log(`💾 [Auth Persistence] Synchronizing tokens for ${user.email}...`)
+          await prisma.user.upsert({
+            where: { email: user.email },
+            update: {
+              access_token: account.access_token,
+              refresh_token: account.refresh_token,
+            },
+            create: {
+              email: user.email,
+              name: user.name || "Default User",
+              access_token: account.access_token,
+              refresh_token: account.refresh_token,
+            }
+          })
+          console.log(`✅ [Auth Persistence] Successfully persisted persistent keys to DB.`)
+        } catch (e) {
+          console.error(`❌ [Auth Persistence Error] Failed to save tokens:`, e)
+        }
+      }
+    }
+  }
 })

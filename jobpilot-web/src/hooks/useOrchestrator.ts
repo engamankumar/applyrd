@@ -17,7 +17,7 @@ export interface OrchestrationResult {
   data: any;
 }
 
-const AGENT_API = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL || "https://jobpilot-agents-704256979090.europe-west1.run.app";
+const AGENT_API = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL || "https://jobpilot-agents-e7dks56c6a-ew.a.run.app";
 const ORCHESTRATOR_URL = `${AGENT_API}/agent/orchestrate`;
 
 export function useOrchestrator() {
@@ -55,11 +55,12 @@ export function useOrchestrator() {
 
         // EXTRA: Sync found jobs to database for the Kanban board
         const searchResult = data.results?.find((r: any) => r.agent === "job_search_agent");
-        console.log("Search Result found in results:", !!searchResult, searchResult?.data?.jobs?.length);
+        const jobs = searchResult?.data?.jobs || (Array.isArray(searchResult?.data) ? searchResult.data : []);
+        console.log("Search Result found in results:", !!searchResult, jobs.length);
         
-        if (searchResult?.data?.jobs?.length > 0) {
-          console.log("Synchronizing discovered jobs to pipeline...", searchResult.data.jobs);
-          const syncRes = await syncFoundJobs(searchResult.data.jobs);
+        if (jobs.length > 0) {
+          console.log("Synchronizing discovered jobs to pipeline...", jobs);
+          const syncRes = await syncFoundJobs(jobs);
           console.log("Sync Result from Server Action:", syncRes);
           
           if (syncRes.success) {

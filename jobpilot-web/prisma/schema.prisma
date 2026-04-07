@@ -23,6 +23,7 @@ model User {
   subscription_tier       String    @default("free") // free, platform_fee, full_service
   gemini_api_key_encrypted String?
   refresh_token           String?   @db.Text
+  access_token            String?   @db.Text
   trial_ends_at           DateTime?
   created_at              DateTime  @default(now())
   updated_at              DateTime  @updatedAt

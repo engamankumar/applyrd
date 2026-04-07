@@ -73,3 +73,6 @@ tzlocal
 uritemplate
 urllib3
 websockets
+sqlalchemy
+psycopg2-binary
+tzlocal
