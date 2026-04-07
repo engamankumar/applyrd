@@ -445,9 +445,16 @@ async def diagnostic():
 log("🚀🚀🚀 [REVISION 30] JOBPILOT AGENT ENGINE IS LIVE AND AWAKE! 🚀🚀🚀")
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://applyrd-704256979090.europe-west1.run.app",
+    "https://jobpilot-web-704256979090.europe-west1.run.app"
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
