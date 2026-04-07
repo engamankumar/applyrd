@@ -43,7 +43,10 @@ export default function JobDetailClient({ job, userEmail }: { job: any, userEmai
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_AGENT_SERVICE_URL}/agent/monitor-gmail`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-google-token': accessToken 
+        },
         body: JSON.stringify({ company_domain: job.company.toLowerCase() + ".com" })
       });
       const data = await res.json();

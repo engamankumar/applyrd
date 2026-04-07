@@ -43,13 +43,13 @@ export default function KanbanBoard({ initialJobs = [], hasJobs = false }: { ini
 
   const handleSync = async () => {
     if (!session?.user?.email) return;
+    const token = (session as any)?.accessToken || "";
     setIsSyncing(true);
-    
-    // Use the toast id to manage it manually for better control
     const toastId = toast.loading('Syncing Inbox: AI is analyzing your job updates...');
     
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_AGENT_SERVICE_URL}/agent/force-sweep?email=${session.user.email}`);
+      // Pass the accessToken so the backend can scan YOUR mailbox
+      const res = await fetch(`${process.env.NEXT_PUBLIC_AGENT_SERVICE_URL}/agent/force-sweep?email=${session.user.email}&token=${token}`);
       const data = await res.json();
       
       if (data.status === "success" || data.status === "sync_started") {

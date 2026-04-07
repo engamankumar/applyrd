@@ -1,7 +1,7 @@
 import axios from "axios"
 import { useMutation } from "@tanstack/react-query"
 
-const AGENT_API = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL || "http://localhost:8000";
+const AGENT_API = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL || "https://jobpilot-agents-704256979090.europe-west1.run.app";
 
 export const useResumeParser = () => {
   return useMutation({
