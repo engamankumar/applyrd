@@ -4,21 +4,22 @@ import os
 # Centralized cascade array of Gemini and Gemma models for High Availability
 # OPTIMIZED FOR YOUR VERIFIED HIGH-QUOTA PRODUCTION MODELS (April 2026)
 CASCADE_MODELS: List[str] = [
-    "models/gemini-2.5-flash-lite",      # 4,000 QPM (VERIFIED WORKING)
-    "models/gemini-1.5-flash-latest",    # Stable High-Quota Fallback
-    "models/gemini-2-flash-lite",        # 4,000 QPM
-    "models/gemini-2-flash",             # 2,000 QPM
-    "models/gemma-4-31b-it",             # Verified Fallback
-    "models/gemini-1.5-pro-latest",      # Pro Reasoner (Working Fallback)
-    "models/gemini-3-flash",             # 1,000 QPM
+    "models/gemini-3.1-flash-lite-preview", # Verified ID (15,000 QPM)
+    "models/gemini-3.1-pro-preview",        # Verified ID (Reasoner)
+    "models/gemini-3-flash-preview",        # Verified ID
+    "models/gemini-2.5-flash-lite",         # Verified working
+    "models/gemini-2.5-flash",              # Verified working
+    "models/gemini-2-flash",       
+    "models/gemma-4-31b-it",         # Stable Fallback
 ]
 
 # FAST_CASCADE_MODELS (Used for rapid inbox-only scanning)
 # Using your highest production quota models
 FAST_CASCADE_MODELS: List[str] = [
+    "models/gemini-3.1-flash-lite-preview",
     "models/gemini-2.5-flash-lite",
-    "models/gemini-1.5-flash-latest",
-    "models/gemini-2-flash-lite"
+    "models/gemini-2-flash"
+    "models/gemma-4-31b-it",
 ]
 
 def get_active_model():
