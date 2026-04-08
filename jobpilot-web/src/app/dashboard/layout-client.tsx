@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   CheckCircle,
   Zap,
+  User
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -116,7 +117,7 @@ export default function DashboardLayout({ children, hasResume, resumeSkillCount 
             <div className="absolute top-2 right-2 w-2 h-2 bg-danger rounded-full border-2 border-surface-container-lowest" />
           </Button>
           <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center text-primary font-bold border border-primary/10 text-[10px] shadow-sm">
-            AK
+            <User size={20} />
           </div>
           <Dialog open={isAddingJob} onOpenChange={setIsAddingJob}>
             <DialogTrigger className="signature-gradient hover:opacity-90 shadow-lg shadow-primary/10 hidden sm:flex gap-2 h-9 items-center border-none rounded-lg px-4 font-bold text-xs text-white cursor-pointer transition-opacity">
@@ -274,7 +275,7 @@ export default function DashboardLayout({ children, hasResume, resumeSkillCount 
 
               <div className="mt-auto pb-12 pt-8 border-t border-muted/10 flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full signature-gradient flex items-center justify-center text-white font-bold shadow-lg shadow-primary/20">AK</div>
+                  <div className="w-12 h-12 rounded-full signature-gradient flex items-center justify-center text-white font-bold shadow-lg shadow-primary/20"> <User size={20} /></div>
                   <div>
                     <div className="text-sm font-bold">Aman Kumar</div>
                     <div className="text-[10px] font-bold text-primary tracking-widest uppercase">Growth Node</div>

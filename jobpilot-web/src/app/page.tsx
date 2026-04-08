@@ -17,7 +17,7 @@ export default async function LandingPage() {
       <header className="glass-nav px-8 py-5 flex items-center justify-between transition-all duration-300">
         <div className="flex items-center gap-10">
           <div className="flex items-center gap-2 group cursor-pointer">
-            <div className="w-9 h-9 signature-gradient rounded flex items-center justify-center text-white font-bold shadow-lg shadow-primary/20 group-hover:scale-105 transition-transform">J</div>
+            <div className="w-9 h-9 signature-gradient rounded flex items-center justify-center text-white font-bold shadow-lg shadow-primary/20 group-hover:scale-105 transition-transform">A</div>
             <span className="text-2xl font-bold tracking-tighter italic">Applyrd</span>
           </div>
           <nav className="hidden lg:flex items-center gap-9 text-[13px] font-bold uppercase tracking-widest text-muted-foreground">

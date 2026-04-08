@@ -58,7 +58,7 @@ export default function OnboardingPage() {
          <div className="w-full max-w-4xl relative">
             <header className="mb-20 flex flex-col items-center">
                <div className="flex items-center gap-3 mb-16 opacity-80 group cursor-pointer" onClick={() => router.push("/")}>
-                  <div className="w-8 h-8 signature-gradient rounded flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-primary/20">J</div>
+                  <div className="w-8 h-8 signature-gradient rounded flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-primary/20">A</div>
                   <span className="text-xl font-bold tracking-tighter italic">Applyrd</span>
                </div>
 

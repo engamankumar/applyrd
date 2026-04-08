@@ -190,8 +190,9 @@ class JobSearchAgent:
             job["matchReason"] = job.get("matchReason") or "Automated baseline alignment identified."
             return job
 
-    async def search_and_score(self, preferences: Dict, resume_text: str) -> List[Dict]:
-        role = preferences.get("preferred_roles", ["Software Engineer"])[0]
+    async def search_and_score(self, preferences: Dict, resume_text: str, user_msg: str) -> List[Dict]:
+        print('aman user_msg',user_msg)
+        role = user_msg or preferences.get("preferred_roles", ["Software Engineer"])[0]
         location = preferences.get("location_preference", "Remote")
         
         raw_jobs = []

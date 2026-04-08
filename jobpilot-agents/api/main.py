@@ -126,9 +126,17 @@ _GETTING_AGENTS = False
 
 def get_agents():
     """Lazy initializer for agents to prevent top-level network blocks."""
-    global coordinator, skill_gap_agent, google_skills_agent, interview_agent, job_search_agent_instance, resume_agent_instance, inbox_agent, _GETTING_AGENTS
-    if coordinator or _GETTING_AGENTS: return
-    
+    global coordinator, skill_gap_agent, google_skills_agent
+    global interview_agent, job_search_agent_instance
+    global resume_agent_instance, inbox_agent, _GETTING_AGENTS
+
+    if coordinator:
+        return
+
+    if _GETTING_AGENTS:
+        # Prevent race condition
+        return
+
     _GETTING_AGENTS = True
     try:
         print("🧩 [Agents] Starting Lazy Initialization...", flush=True)
@@ -146,9 +154,13 @@ def get_agents():
         print("🧩 [Agents] Resume ready.", flush=True)
         inbox_agent = InboxAgent(client=gemini_client)
         print("🧩 [Agents] All instances initialized.", flush=True)
+
+    except Exception as e:
+        print(f"❌ Agent initialization failed: {e}")
+        raise  # VERY IMPORTANT → don't silently fail
+
     finally:
         _GETTING_AGENTS = False
-
 def ai(prompt: str) -> str:
     """Helper to call Gemini or return a placeholder in mock mode."""
     if gemini_client is None:
@@ -563,6 +575,9 @@ async def health():
 
 @app.post("/agent/orchestrate")
 async def orchestrate(request: Dict):
+    get_agents()
+    if coordinator is None:
+        raise HTTPException(status_code=500, detail="Coordinator not initialized")
     user_msg = request.get("message", "")
     context = request.get("context", {})
     user_email = request.get("user_email") or context.get("email")
@@ -610,7 +625,8 @@ async def orchestrate(request: Dict):
         agent = step.get("agent")
         if agent == "job_search_agent":
             prefs = context.get("preferences", {})
-            job_data = await search_jobs(JobSearchRequest(preferences=prefs), resume_text=resume_text)
+            print(f"user_msg: {user_msg} | prefs: {prefs}")
+            job_data = await search_jobs(JobSearchRequest(preferences=prefs), resume_text=resume_text, user_msg=user_msg)
             results.append({"agent": agent, "data": job_data.get("jobs")})
         elif agent == "resume_agent":
             tailored = await tailor_resume({
@@ -737,11 +753,11 @@ async def parse_resume(file: UploadFile = File(...)):
         return {"status": "error", "message": f"Gemini returned unparseable response: {str(e)}"}
 
 @app.post("/agent/search-jobs")
-async def search_jobs(request: JobSearchRequest, resume_text: str = "Sample Resume"):
+async def search_jobs(request: JobSearchRequest, resume_text: str = "Sample Resume",user_msg: str=''):
     prefs_dict = request.preferences.dict() if request.preferences else {}
     if not prefs_dict.get("preferred_roles"): prefs_dict["preferred_roles"] = ["Software Engineer"]
     try:
-        jobs = await job_search_agent_instance.search_and_score(prefs_dict, resume_text)
+        jobs = await job_search_agent_instance.search_and_score(prefs_dict, resume_text,user_msg)
         if jobs: return {"status": "success", "jobs": jobs}
     except Exception as e: print("JobSearchAgent Error:", e)
     return {"status": "error", "message": "Search engine offline"}
