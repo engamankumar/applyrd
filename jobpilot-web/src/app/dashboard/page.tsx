@@ -66,39 +66,39 @@ export default async function DashboardPage() {
       <div className="flex flex-col lg:flex-row gap-8">
         <div className="flex-1 min-w-0">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-on-surface tracking-tight mb-1">Welcome to JobPilot 👋</h1>
+            <h1 className="text-3xl font-bold text-on-surface tracking-tight mb-1">Welcome to Applyrd 👋</h1>
             <p className="text-muted-foreground font-medium italic">Your agent nodes are active and waiting for a command.</p>
           </div>
-           
-           <StatsBar data={stats} />
-           
-           <KanbanBoard initialJobs={jobs} hasJobs={hasJobs} />
+
+          <StatsBar data={stats} />
+
+          <KanbanBoard initialJobs={jobs} hasJobs={hasJobs} />
         </div>
 
         {/* Right Sidebar - Activity & AI */}
         <div className="w-full lg:w-[320px] shrink-0 space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
-           <AIAssistant />
-           <ActivityFeed />
-           
-           <div className="p-6 rounded-2xl bg-surface-container-low border border-border/5 relative overflow-hidden group">
-              <div className="relative z-10 flex flex-col items-center text-center py-4">
-                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-4">
-                  <Sparkles size={20} />
-                </div>
-                <h4 className="font-bold text-xs uppercase tracking-widest text-on-surface/60 mb-2">Resume Intelligence</h4>
-                <p className="text-[11px] font-medium text-muted-foreground leading-relaxed px-4">
-                  {hasResume 
-                    ? `Your resume is active with ${skillCount} skills. Jobs are being matched automatically.`
-                    : "Upload your resume to generate your match score and identify tactical skill gaps."
-                  }
-                </p>
-                <Link href={hasResume ? "/dashboard/resume" : "/dashboard/resume"} className="w-full mt-6">
-                  <Button variant="outline" className="w-full font-bold h-10 border-primary/20 text-primary hover:bg-primary/5">
-                    {hasResume ? "Manage Resume" : "Upload Resume"}
-                  </Button>
-                </Link>
+          <AIAssistant />
+          <ActivityFeed />
+
+          <div className="p-6 rounded-2xl bg-surface-container-low border border-border/5 relative overflow-hidden group">
+            <div className="relative z-10 flex flex-col items-center text-center py-4">
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-4">
+                <Sparkles size={20} />
               </div>
-           </div>
+              <h4 className="font-bold text-xs uppercase tracking-widest text-on-surface/60 mb-2">Resume Intelligence</h4>
+              <p className="text-[11px] font-medium text-muted-foreground leading-relaxed px-4">
+                {hasResume
+                  ? `Your resume is active with ${skillCount} skills. Jobs are being matched automatically.`
+                  : "Upload your resume to generate your match score and identify tactical skill gaps."
+                }
+              </p>
+              <Link href={hasResume ? "/dashboard/resume" : "/dashboard/resume"} className="w-full mt-6">
+                <Button variant="outline" className="w-full font-bold h-10 border-primary/20 text-primary hover:bg-primary/5">
+                  {hasResume ? "Manage Resume" : "Upload Resume"}
+                </Button>
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -34,7 +34,7 @@ steps:
         "--region",
         "europe-west1",
         "--set-env-vars",
-        "AUTH_SECRET=${_AUTH_SECRET},AUTH_URL=${_AUTH_URL},GOOGLE_CLIENT_ID=${_GOOGLE_CLIENT_ID},GOOGLE_CLIENT_SECRET=${_GOOGLE_CLIENT_SECRET},DATABASE_URL=${_DATABASE_URL},AGENT_SERVICE_URL=${_AGENT_SERVICE_URL}",
+        "AUTH_SECRET=${_AUTH_SECRET},AUTH_URL=${_AUTH_URL},GOOGLE_CLIENT_ID=${_GOOGLE_CLIENT_ID},GOOGLE_CLIENT_SECRET=${_GOOGLE_CLIENT_SECRET},DATABASE_URL=${_DATABASE_URL},AGENT_SERVICE_URL=${_AGENT_SERVICE_URL},NEXT_PUBLIC_AGENT_SERVICE_URL=${_NEXT_PUBLIC_AGENT_SERVICE_URL}",
         "--add-cloudsql-instances",
         "applyrd-ai:europe-west1:jobpilot-db",
         "--allow-unauthenticated",
@@ -51,3 +51,4 @@ substitutions:
   _GOOGLE_CLIENT_SECRET: "missing"
   _DATABASE_URL: "missing"
   _AGENT_SERVICE_URL: "https://jobpilot-agents-704256979090.europe-west1.run.app"
+  _NEXT_PUBLIC_AGENT_SERVICE_URL: "https://jobpilot-agents-704256979090.europe-west1.run.app"

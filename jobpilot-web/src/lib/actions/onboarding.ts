@@ -127,7 +127,7 @@ export async function getJobById(id: string) {
     console.error("[ERROR] Malformed Job ID:", id);
     return null;
   }
-  
+
   const session = await auth();
   if (!session?.user?.email) return null;
 
@@ -181,7 +181,7 @@ export async function saveResumeData(data: {
     update: {}, // No updates needed, just ensure existence
     create: {
       email: session.user.email,
-      name: session.user.name || "JobPilot User",
+      name: session.user.name || "Applyrd User",
     }
   })
 
@@ -231,8 +231,8 @@ export async function getApplicationsStats() {
   if (!user) return null;
 
   const totalApps = user.jobs.length;
-  const avgScore = user.jobs.length > 0 
-    ? Math.round(user.jobs.reduce((acc: number, j: any) => acc + (j.match_score || 0), 0) / user.jobs.length) 
+  const avgScore = user.jobs.length > 0
+    ? Math.round(user.jobs.reduce((acc: number, j: any) => acc + (j.match_score || 0), 0) / user.jobs.length)
     : 0;
 
   return {

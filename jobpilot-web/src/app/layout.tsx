@@ -4,12 +4,12 @@ import "./globals.css"
 import Providers from "@/components/providers"
 import { cn } from "@/lib/utils";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+const geist = Geist({ subsets: ['latin'], variable: '--font-sans' });
 const inter = Inter({ subsets: ["latin"] })
 const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" })
 
 export const metadata: Metadata = {
-  title: "JobPilot — AI-Powered Job Hunt Companion",
+  title: "Applyrd — AI-Powered Job Hunt Companion",
   description: "Automate your job hunt with multi-agent AI. Tailor resumes, find referrals, and track applications in one place.",
 }
 

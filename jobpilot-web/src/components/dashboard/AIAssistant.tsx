@@ -38,7 +38,7 @@ export default function AIAssistant() {
         <div className="w-8 h-8 rounded-lg signature-gradient flex items-center justify-center shadow-lg shadow-primary/20">
           <Sparkles size={16} className="text-white" />
         </div>
-        <h3 className="text-lg font-bold text-on-surface tracking-tight">JobPilot Automation</h3>
+        <h3 className="text-lg font-bold text-on-surface tracking-tight">Applyrd Automation</h3>
       </div>
 
       <div className="space-y-6">
@@ -50,7 +50,7 @@ export default function AIAssistant() {
             onKeyDown={(e) => e.key === "Enter" && handleAction()}
             className="h-14 pl-4 pr-16 bg-surface-container-lowest border-primary/10 rounded-2xl focus-visible:ring-primary/20 font-medium focus:border-primary/30 transition-all text-base shadow-sm"
           />
-          <Button 
+          <Button
             disabled={loading || !query.trim()}
             onClick={handleAction}
             className="absolute right-2 top-2 h-10 w-10 p-0 rounded-xl signature-gradient shadow-lg shadow-primary/20 hover:scale-105 transition-all"
@@ -66,15 +66,15 @@ export default function AIAssistant() {
               <span className="text-xs font-bold uppercase tracking-widest text-primary opacity-80">Orchestration Plan</span>
               <Badge variant="outline" className="text-[10px] font-bold h-5 bg-primary/5 text-primary border-primary/10 tracking-tight">Active</Badge>
             </div>
-            
+
             <div className="space-y-4 relative">
               {/* Vertical line connecting steps */}
               <div className="absolute left-[11px] top-2 bottom-2 w-0.5 bg-primary/10" />
-              
+
               {steps.map((step, idx) => {
                 const isExecuting = loading && results.length <= idx;
                 const isDone = results.length > idx;
-                
+
                 return (
                   <div key={idx} className={`flex gap-4 relative z-10 ${!isDone && !isExecuting ? 'opacity-50' : ''}`}>
                     <div className="mt-1 bg-surface-container-lowest rounded-full p-0.5">
@@ -104,9 +104,9 @@ export default function AIAssistant() {
         {message && !loading && (
           <div className="space-y-4">
             <div className="p-4 rounded-xl bg-primary/5 border border-primary/10 animate-in zoom-in-95 duration-500">
-               <p className="text-sm font-medium leading-relaxed italic text-on-surface/80">"{message}"</p>
+              <p className="text-sm font-medium leading-relaxed italic text-on-surface/80">"{message}"</p>
             </div>
-            
+
             <div className="flex flex-wrap gap-2">
               {results.some(r => r.agent === "google_skills_agent") && (
                 <Link href="/dashboard/roadmap">
