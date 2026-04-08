@@ -17,7 +17,7 @@ import { useTailorResume, useCoverLetter, useScheduleNotification } from "@/hook
 import jsPDF from "jspdf"
 
 
-import { saveJobTailoredResult } from "@/lib/actions/onboarding"
+import { saveJobTailoredResult, monitorGmailInbox } from "@/lib/actions/onboarding"
 
 export default function JobDetailClient({ job, userEmail }: { job: any, userEmail: string }) {
   const { data: session } = useSession()
@@ -41,17 +41,13 @@ export default function JobDetailClient({ job, userEmail }: { job: any, userEmai
   const handleInboxSync = async () => {
     setIsSyncing(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_AGENT_SERVICE_URL}/agent/monitor-gmail`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'x-google-token': accessToken 
-        },
-        body: JSON.stringify({ company_domain: job.company.toLowerCase() + ".com" })
-      });
-      const data = await res.json();
-      if (data.status === "success") {
-        setSyncResult(data.data);
+      const companyDomain = job.company.toLowerCase() + ".com";
+      const res = await monitorGmailInbox(companyDomain);
+      
+      if (res.success && res.data.status === "success") {
+        setSyncResult(res.data.data);
+      } else {
+        console.error("Sync failed:", res.error);
       }
     } catch (e) {
       console.error(e);

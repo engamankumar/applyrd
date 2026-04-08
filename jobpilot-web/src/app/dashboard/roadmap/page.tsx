@@ -11,9 +11,9 @@ import {
 } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import axios from "axios"
-import { getUserProfile } from "@/lib/actions/onboarding"
+import { getUserProfile, getCareerRoadmap } from "@/lib/actions/onboarding"
 
-const AGENT_API = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL;
+
 
 type RoadmapData = {
   missing_skills: string[]
@@ -39,18 +39,17 @@ export default function CareerRoadmapPage() {
         ? userProfile.preferred_roles[0] 
         : "Senior Infrastructure Engineer";
 
-      // Orchestrate a "Analyze career and skills gap" request
-      const res = await axios.post(`${AGENT_API}/agent/orchestrate`, {
-        message: `Analyze my career trajectory and identify skill gaps for a ${targetRole} role.`,
-        user_email: userProfile?.email,
-        context: { 
-          preferences: { role: targetRole },
-          email: userProfile?.email
-        }
-      })
+      // Use Server Action to call Orchestrator (avoids client-side env var issues)
+      const roadmapRes = await getCareerRoadmap(targetRole);
       
-      const skillRes = res.data.results.find((r: any) => r.agent === "skill_gap_agent")?.data
-      const labRes = res.data.results.find((r: any) => r.agent === "google_skills_agent")?.data?.recommended_labs
+      if (!roadmapRes.success) {
+        console.error("Roadmap Sync Failed:", roadmapRes.error);
+        return;
+      }
+
+      const resData = roadmapRes.data;
+      const skillRes = resData.results.find((r: any) => r.agent === "skill_gap_agent")?.data
+      const labRes = resData.results.find((r: any) => r.agent === "google_skills_agent")?.data?.recommended_labs
 
       setData({
         missing_skills: skillRes?.missing_skills || [

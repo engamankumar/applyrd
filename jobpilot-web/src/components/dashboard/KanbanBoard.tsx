@@ -8,7 +8,7 @@ import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { MoreHorizontal, Clock, Plus, Mail, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { createManualJob, updateJobStatus } from "@/lib/actions/onboarding";
+import { createManualJob, updateJobStatus, forceSweepInbox } from "@/lib/actions/onboarding";
 import { toast } from "sonner";
 import { Search } from "lucide-react";
 import {
@@ -48,15 +48,14 @@ export default function KanbanBoard({ initialJobs = [], hasJobs = false }: { ini
     const toastId = toast.loading('Syncing Inbox: AI is analyzing your job updates...');
     
     try {
-      // Pass the accessToken so the backend can scan YOUR mailbox
-      const res = await fetch(`${process.env.NEXT_PUBLIC_AGENT_SERVICE_URL}/agent/force-sweep?email=${session.user.email}&token=${token}`);
-      const data = await res.json();
+      // Use Server Action to trigger the sync (avoids client-side env var issues)
+      const res = await forceSweepInbox();
       
-      if (data.status === "success" || data.status === "sync_started") {
+      if (res.success && (res.data.status === "success" || res.data.status === "sync_started")) {
         toast.success("Inbox sync complete!", { id: toastId });
         setTimeout(() => window.location.reload(), 1000);
       } else {
-        toast.error("Sync failed: " + (data.message || "Unknown error"), { id: toastId });
+        toast.error("Sync failed: " + (res.error || res.data?.message || "Unknown error"), { id: toastId });
       }
     } catch (e) {
       toast.error("Network error during sync.", { id: toastId });

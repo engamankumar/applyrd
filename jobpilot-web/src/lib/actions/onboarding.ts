@@ -443,3 +443,104 @@ export async function getMockInterviewSessions() {
     orderBy: { created_at: 'desc' }
   });
 }
+
+export async function forceSweepInbox() {
+  const session = await auth();
+  if (!session?.user?.email) {
+    return { error: "Unauthorized" };
+  }
+
+  const token = (session as any)?.accessToken || "";
+  const agentUrl = process.env.AGENT_SERVICE_URL || "http://localhost:8000";
+  
+  try {
+    console.log(`[Server Action] Triggering force-sweep for ${session.user.email} at ${agentUrl}`);
+    const res = await fetch(`${agentUrl}/agent/force-sweep?email=${session.user.email}&token=${token}`);
+    
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`[Server Action] Agent Service Error: ${res.status} - ${errorText}`);
+      return { error: `Agent Service Error: ${res.status}` };
+    }
+
+    const data = await res.json();
+    return { success: true, data };
+  } catch (error: any) {
+    console.error("[Server Action] Fetch Error:", error);
+    return { error: error.message };
+  }
+}
+
+export async function monitorGmailInbox(companyDomain: string) {
+  const session = await auth();
+  if (!session?.user?.email) {
+    return { error: "Unauthorized" };
+  }
+
+  const token = (session as any)?.accessToken || "";
+  const agentUrl = process.env.AGENT_SERVICE_URL || "http://localhost:8000";
+  
+  try {
+    console.log(`[Server Action] Triggering monitor-gmail for ${session.user.email} at ${agentUrl}`);
+    const res = await fetch(`${agentUrl}/agent/monitor-gmail`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ 
+        email: session.user.email,
+        token: token,
+        company_domain: companyDomain 
+      })
+    });
+    
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`[Server Action] Agent Service Error: ${res.status} - ${errorText}`);
+      return { error: `Agent Service Error: ${res.status}` };
+    }
+
+    const data = await res.json();
+    return { success: true, data };
+  } catch (error: any) {
+    console.error("[Server Action] Fetch Error:", error);
+    return { error: error.message };
+  }
+}
+
+export async function getCareerRoadmap(targetRole: string) {
+  const session = await auth();
+  if (!session?.user?.email) {
+    return { error: "Unauthorized" };
+  }
+
+  const agentUrl = process.env.AGENT_SERVICE_URL || "http://localhost:8000";
+  
+  try {
+    const res = await fetch(`${agentUrl}/agent/orchestrate`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ 
+        message: `Analyze my career trajectory and identify skill gaps for a ${targetRole} role.`,
+        user_email: session.user.email,
+        context: { 
+          preferences: { role: targetRole },
+          email: session.user.email
+        }
+      })
+    });
+    
+    if (!res.ok) {
+      const errorText = await res.text();
+      return { error: `Agent Service Error: ${res.status}` };
+    }
+
+    const data = await res.json();
+    return { success: true, data };
+  } catch (error: any) {
+    console.error("[Server Action] Roadmap Error:", error);
+    return { error: error.message };
+  }
+}
