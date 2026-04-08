@@ -1,37 +1,53 @@
 steps:
-# 1. Build the production container image with Build Arguments
-- name: 'gcr.io/cloud-builders/docker'
-  args: [
-    'build',
-    '-t', 'europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/applyrd',
-    '--build-arg', 'NEXT_PUBLIC_AGENT_SERVICE_URL=https://jobpilot-agents-704256979090.europe-west1.run.app',
-    '--build-arg', 'NEXT_PUBLIC_APP_URL=https://applyrd-704256979090.europe-west1.run.app',
-    '.'
-  ]
+  # 1. Build the production container image with Build Arguments
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      [
+        "build",
+        "-t",
+        "europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/applyrd",
+        "--build-arg",
+        "NEXT_PUBLIC_AGENT_SERVICE_URL=https://jobpilot-agents-704256979090.europe-west1.run.app",
+        "--build-arg",
+        "NEXT_PUBLIC_APP_URL=https://applyrd-704256979090.europe-west1.run.app",
+        ".",
+      ]
 
-# 2. Push the image to Google Artifact Registry
-- name: 'gcr.io/cloud-builders/docker'
-  args: ['push', 'europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/applyrd']
+  # 2. Push the image to Google Artifact Registry
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      [
+        "push",
+        "europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/applyrd",
+      ]
 
-# 3. Deploy to Cloud Run using the securely built image
-- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-  entrypoint: 'gcloud'
-  args: [
-    'run', 'deploy', 'applyrd',
-    '--image', 'europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/applyrd',
-    '--region', 'europe-west1',
-    '--set-env-vars', 'AUTH_SECRET=${_AUTH_SECRET},AUTH_URL=${_AUTH_URL},GOOGLE_CLIENT_ID=${_GOOGLE_CLIENT_ID},GOOGLE_CLIENT_SECRET=${_GOOGLE_CLIENT_SECRET},DATABASE_URL=${_DATABASE_URL}',
-    '--add-cloudsql-instances', 'applyrd-ai:europe-west1:jobpilot-db',
-    '--allow-unauthenticated',
-    '--quiet'
-  ]
+  # 3. Deploy to Cloud Run using the securely built image
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: "gcloud"
+    args:
+      [
+        "run",
+        "deploy",
+        "applyrd",
+        "--image",
+        "europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/applyrd",
+        "--region",
+        "europe-west1",
+        "--set-env-vars",
+        "AUTH_SECRET=${_AUTH_SECRET},AUTH_URL=${_AUTH_URL},GOOGLE_CLIENT_ID=${_GOOGLE_CLIENT_ID},GOOGLE_CLIENT_SECRET=${_GOOGLE_CLIENT_SECRET},DATABASE_URL=${_DATABASE_URL},AGENT_SERVICE_URL=${_AGENT_SERVICE_URL}",
+        "--add-cloudsql-instances",
+        "applyrd-ai:europe-west1:jobpilot-db",
+        "--allow-unauthenticated",
+        "--quiet",
+      ]
 
 images:
-- 'europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/applyrd'
+  - "europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/applyrd"
 
 substitutions:
-  _AUTH_SECRET: 'missing'
-  _AUTH_URL: 'https://applyrd-704256979090.europe-west1.run.app'
-  _GOOGLE_CLIENT_ID: 'missing'
-  _GOOGLE_CLIENT_SECRET: 'missing'
-  _DATABASE_URL: 'missing'
+  _AUTH_SECRET: "missing"
+  _AUTH_URL: "https://applyrd-704256979090.europe-west1.run.app"
+  _GOOGLE_CLIENT_ID: "missing"
+  _GOOGLE_CLIENT_SECRET: "missing"
+  _DATABASE_URL: "missing"
+  _AGENT_SERVICE_URL: "https://jobpilot-agents-704256979090.europe-west1.run.app"
