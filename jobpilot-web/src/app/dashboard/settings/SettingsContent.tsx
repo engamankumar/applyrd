@@ -28,8 +28,30 @@ export default function SettingsContent({ initialData }: { initialData: any }) {
     name: initialData?.name || "",
     preferred_roles: initialData?.preferred_roles || [],
     location_preference: initialData?.location_preference || "",
-    reminder_time: initialData?.reminder_time || "09:00"
+    reminder_time: initialData?.reminder_time || "09:00",
+    reminder_timezone: initialData?.reminder_timezone || "Asia/Kolkata",
   })
+
+  const TIMEZONES = [
+    { label: "India (IST) — UTC+5:30",          value: "Asia/Kolkata" },
+    { label: "United Kingdom (GMT/BST) — UTC+0", value: "Europe/London" },
+    { label: "US Eastern (ET) — UTC-5/-4",       value: "America/New_York" },
+    { label: "US Central (CT) — UTC-6/-5",       value: "America/Chicago" },
+    { label: "US Mountain (MT) — UTC-7/-6",      value: "America/Denver" },
+    { label: "US Pacific (PT) — UTC-8/-7",       value: "America/Los_Angeles" },
+    { label: "Canada — Toronto (ET)",            value: "America/Toronto" },
+    { label: "Canada — Vancouver (PT)",          value: "America/Vancouver" },
+    { label: "Germany / Berlin (CET) — UTC+1",   value: "Europe/Berlin" },
+    { label: "France / Paris (CET) — UTC+1",     value: "Europe/Paris" },
+    { label: "UAE / Dubai (GST) — UTC+4",        value: "Asia/Dubai" },
+    { label: "Singapore (SGT) — UTC+8",          value: "Asia/Singapore" },
+    { label: "Japan (JST) — UTC+9",              value: "Asia/Tokyo" },
+    { label: "Australia — Sydney (AEDT) — UTC+11",value: "Australia/Sydney" },
+    { label: "Australia — Melbourne (AEDT)",     value: "Australia/Melbourne" },
+    { label: "New Zealand (NZDT) — UTC+13",      value: "Pacific/Auckland" },
+    { label: "Brazil — São Paulo (BRT) — UTC-3", value: "America/Sao_Paulo" },
+    { label: "UTC (Universal)",                  value: "UTC" },
+  ]
 
   const segments = [
     { id: "Narrative", icon: <User size={18} /> },
@@ -153,32 +175,42 @@ export default function SettingsContent({ initialData }: { initialData: any }) {
                   >
                      <div>
                         <h2 className="text-2xl font-bold tracking-tight mb-2 italic">Agentic Briefings</h2>
-                        <p className="text-muted-foreground text-sm font-medium">Configure at what time your agents should deliver the daily job digest.</p>
+                        <p className="text-muted-foreground text-sm font-medium">Configure when your agents deliver the daily job digest, in your local timezone.</p>
                      </div>
 
                      <div className="grid md:grid-cols-2 gap-8">
                         <div className="space-y-3">
-                           <label className="text-[10px] font-bold uppercase tracking-widest text-primary/60 ml-1">Daily Summary Schedule</label>
-                           <Input 
+                           <label className="text-[10px] font-bold uppercase tracking-widest text-primary/60 ml-1">Daily Summary Time</label>
+                           <input
                              type="time"
                              value={formData.reminder_time}
                              onChange={e => setFormData({ ...formData, reminder_time: e.target.value })}
-                             className="h-14 bg-surface-container-low border-none rounded-2xl px-6 font-bold focus-visible:ring-primary/20" 
+                             className="w-full h-14 bg-surface-container-low border-none rounded-2xl px-6 font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
                            />
                         </div>
                         <div className="space-y-3">
-                           <label className="text-[10px] font-bold uppercase tracking-widest text-primary/60 ml-1">Tracker Frequency</label>
-                           <Badge variant="secondary" className="h-14 w-full rounded-2xl flex items-center justify-center font-bold">REAL-TIME (LIVE)</Badge>
+                           <label className="text-[10px] font-bold uppercase tracking-widest text-primary/60 ml-1">Your Timezone</label>
+                           <select
+                             value={formData.reminder_timezone}
+                             onChange={e => setFormData({ ...formData, reminder_timezone: e.target.value })}
+                             className="w-full h-14 bg-surface-container-low border-none rounded-2xl px-6 font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm appearance-none cursor-pointer"
+                           >
+                             {TIMEZONES.map(tz => (
+                               <option key={tz.value} value={tz.value}>{tz.label}</option>
+                             ))}
+                           </select>
                         </div>
                      </div>
 
                      <div className="bg-primary/5 p-6 rounded-3xl border border-primary/10 flex items-center gap-6">
-                        <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center text-white">
+                        <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center text-white flex-shrink-0">
                            <Bell size={20} />
                         </div>
                         <div>
-                           <p className="text-xs font-bold uppercase tracking-widest text-primary mb-1">Recruiter Reply Tracking</p>
-                           <p className="text-[11px] text-muted-foreground font-medium">Auto-syncs inbox for interview invites every 6 hours using MCP nodes.</p>
+                           <p className="text-xs font-bold uppercase tracking-widest text-primary mb-1">Timezone-Aware Scheduling</p>
+                           <p className="text-[11px] text-muted-foreground font-medium">
+                             Your briefing fires at your chosen time in <span className="text-primary font-bold">{TIMEZONES.find(t => t.value === formData.reminder_timezone)?.label ?? formData.reminder_timezone}</span>. Inbox auto-syncs every 6 hours via MCP nodes.
+                           </p>
                         </div>
                      </div>
 

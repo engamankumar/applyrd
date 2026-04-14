@@ -52,7 +52,7 @@ export default function KanbanBoard({ initialJobs = [], hasJobs = false }: { ini
   const { data: session } = useSession();
   const [newTitle, setNewTitle] = useState("");
   const [newCompany, setNewCompany] = useState("");
-  const [sortByScoreDesc, setSortByScoreDesc] = useState(false);
+  const [sortMode, setSortMode] = useState<"time" | "score_desc" | "score_asc">("time");
   const [filterActive, setFilterActive] = useState(false);
   const [draggedJobId, setDraggedJobId] = useState<string | null>(null);
   const { orchestrate, loading: orchestratorLoading } = useOrchestrator();
@@ -165,10 +165,14 @@ export default function KanbanBoard({ initialJobs = [], hasJobs = false }: { ini
           <Button 
             variant="ghost" 
             size="sm" 
-            onClick={() => setSortByScoreDesc(!sortByScoreDesc)}
-            className={`h-8 text-xs font-bold px-3 transition-all ${sortByScoreDesc ? 'bg-primary/10 text-primary' : 'hover:bg-surface-container-lowest hover:text-primary'}`}
+            onClick={() => {
+              if (sortMode === 'time') setSortMode('score_desc');
+              else if (sortMode === 'score_desc') setSortMode('score_asc');
+              else setSortMode('time');
+            }}
+            className={`h-8 text-xs font-bold px-3 transition-all ${sortMode !== 'time' ? 'bg-primary/10 text-primary' : 'hover:bg-surface-container-lowest hover:text-primary'}`}
           >
-            Sort by Score {sortByScoreDesc ? '(Desc)' : '(Asc)'}
+            {sortMode === 'time' ? 'Sort: Latest' : sortMode === 'score_desc' ? 'Sort: Score (Desc)' : 'Sort: Score (Asc)'}
           </Button>
           {!hasJobs && (
             <Button 
@@ -198,10 +202,17 @@ export default function KanbanBoard({ initialJobs = [], hasJobs = false }: { ini
             columnJobs = columnJobs.filter(j => (j.match_score || 0) > 80); // rudimentary filter logic
           }
           
-          if (sortByScoreDesc) {
+          if (sortMode === 'score_desc') {
             columnJobs = [...columnJobs].sort((a,b) => (b.match_score || 0) - (a.match_score || 0));
-          } else {
+          } else if (sortMode === 'score_asc') {
             columnJobs = [...columnJobs].sort((a,b) => (a.match_score || 0) - (b.match_score || 0));
+          } else {
+            // default to time, latest on top
+            columnJobs = [...columnJobs].sort((a, b) => {
+              const dateA = a.found_at ? new Date(a.found_at).getTime() : 0;
+              const dateB = b.found_at ? new Date(b.found_at).getTime() : 0;
+              return dateB - dateA;
+            });
           }
 
           return (

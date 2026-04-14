@@ -342,6 +342,7 @@ export async function getUserProfile() {
       preferred_roles: true,
       location_preference: true,
       reminder_time: true,
+      reminder_timezone: true,
     }
   });
 }
@@ -358,6 +359,7 @@ export async function updateUserProfile(data: any) {
         preferred_roles: data.preferred_roles,
         location_preference: data.location_preference,
         reminder_time: data.reminder_time || "09:00",
+        reminder_timezone: data.reminder_timezone || "Asia/Kolkata",
       }
     });
 
@@ -369,7 +371,8 @@ export async function updateUserProfile(data: any) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             email: session.user.email,
-            reminder_time: data.reminder_time
+            reminder_time: data.reminder_time,
+            reminder_timezone: data.reminder_timezone || "Asia/Kolkata",
           })
         }).catch(err => console.error("Failed to sync schedule with agent:", err));
       } catch (e) {}

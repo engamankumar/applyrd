@@ -373,12 +373,12 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"❌ [Lifespan Error] Scheduler failed: {e}", flush=True)
     
-    # NEW: Smart Per-User Scheduling!
+    # NEW: Smart Per-User Scheduling with per-user timezone support!
     import pytz
     conn = get_db_connection()
     if conn:
         cur = conn.cursor()
-        cur.execute('SELECT id, email, reminder_time, preferred_roles, location_preference FROM "User" WHERE reminder_time IS NOT NULL')
+        cur.execute('SELECT id, email, reminder_time, reminder_timezone, preferred_roles, location_preference FROM "User" WHERE reminder_time IS NOT NULL')
         users = cur.fetchall()
         for user in users:
             try:
@@ -387,6 +387,14 @@ async def lifespan(app: FastAPI):
                 role = (user.get('preferred_roles') or ["Software Engineer"])[0]
                 location = user.get('location_preference') or "Remote"
                 prefs = {"preferred_roles": [role], "location_preference": location}
+                # Use the user's own timezone — fallback to Asia/Kolkata for backward compat
+                user_tz_str = user.get('reminder_timezone') or 'Asia/Kolkata'
+                try:
+                    user_tz = pytz.timezone(user_tz_str)
+                except pytz.UnknownTimeZoneError:
+                    log(f"⚠️ [Scheduler] Unknown timezone '{user_tz_str}' for {user['email']}, falling back to Asia/Kolkata")
+                    user_tz = pytz.timezone('Asia/Kolkata')
+                    user_tz_str = 'Asia/Kolkata'
                 # Create a persistent CRON job for this exact user!
                 # NOTE: access_token is NOT stored here — daily_sweep will
                 # self-fetch the refresh_token from DB at fire time.
@@ -395,13 +403,13 @@ async def lifespan(app: FastAPI):
                     'cron', 
                     hour=h, 
                     minute=m, 
-                    timezone=pytz.timezone('Asia/Kolkata'),
+                    timezone=user_tz,
                     id=f"briefing_{user['id']}",
                     args=[{"user_id": user['id'], "user_email": user['email'], "preferences": prefs}],
                     replace_existing=True,
                     misfire_grace_time=3600 # Catch up if server was down!
                 )
-                log(f"⏰ [Scheduler] Registered briefing for {user['email']} at {user['reminder_time']} IST.")
+                log(f"⏰ [Scheduler] Registered briefing for {user['email']} at {user['reminder_time']} {user_tz_str}.")
             except Exception as e:
                 log(f"⚠️ [Scheduler] Could not register briefing for {user['email']}: {e}")
         cur.close()
@@ -498,6 +506,7 @@ async def update_schedule(request: Dict):
     """Dynamically update a user's briefing schedule without server restart"""
     email = request.get("email")
     reminder_time = request.get("reminder_time")
+    reminder_timezone = request.get("reminder_timezone")  # NEW: accept timezone from frontend
     
     if not email or not reminder_time:
         return {"status": "error", "message": "Missing email or reminder_time"}
@@ -507,13 +516,16 @@ async def update_schedule(request: Dict):
         user_id = None
         if conn:
             cur = conn.cursor()
-            # Also fetch preferred_roles so we can pass them into the sweep args
-            cur.execute('SELECT id, preferred_roles, location_preference FROM "User" WHERE email = %s', (email,))
+            # Also fetch preferred_roles and stored timezone so we can pass them into the sweep args
+            cur.execute('SELECT id, preferred_roles, location_preference, reminder_timezone FROM "User" WHERE email = %s', (email,))
             u_row = cur.fetchone()
             if u_row:
                 user_id = u_row['id']
                 role = (u_row.get('preferred_roles') or ["Software Engineer"])[0]
                 location = u_row.get('location_preference') or "Remote"
+                # Use timezone from request (freshly saved) or fall back to DB value
+                if not reminder_timezone:
+                    reminder_timezone = u_row.get('reminder_timezone') or 'Asia/Kolkata'
             cur.close()
             conn.close()
             
@@ -525,7 +537,15 @@ async def update_schedule(request: Dict):
         
         prefs = {"preferred_roles": [role], "location_preference": location}
 
-        # Replace the existing job with the new time.
+        # Validate and resolve the timezone
+        try:
+            user_tz = pytz.timezone(reminder_timezone)
+        except pytz.UnknownTimeZoneError:
+            log(f"⚠️ [Scheduler] Unknown timezone '{reminder_timezone}' for {email}, falling back to Asia/Kolkata")
+            user_tz = pytz.timezone('Asia/Kolkata')
+            reminder_timezone = 'Asia/Kolkata'
+
+        # Replace the existing job with the new time and timezone.
         # NOTE: access_token is intentionally NOT stored here — daily_sweep will
         # self-fetch the refresh_token from DB at fire time to get a fresh token.
         scheduler.add_job(
@@ -533,13 +553,13 @@ async def update_schedule(request: Dict):
             'cron', 
             hour=h, 
             minute=m, 
-            timezone=pytz.timezone('Asia/Kolkata'),
+            timezone=user_tz,
             id=f"briefing_{user_id}",
             args=[{"user_id": user_id, "user_email": email, "preferences": prefs}],
             replace_existing=True,
             misfire_grace_time=3600
         )
-        log(f"⏰ [Scheduler] dynamically updated briefing for {email} to {reminder_time} IST.")
+        log(f"⏰ [Scheduler] Dynamically updated briefing for {email} to {reminder_time} {reminder_timezone}.")
         return {"status": "success", "message": f"Updated schedule for {email}"}
     except Exception as e:
         log(f"❌ [Scheduler Update Error] {e}")
