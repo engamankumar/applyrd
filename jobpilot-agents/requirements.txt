@@ -76,3 +76,4 @@ websockets
 sqlalchemy
 psycopg2-binary
 tzlocal
+pytz

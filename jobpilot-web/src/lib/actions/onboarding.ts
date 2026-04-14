@@ -119,6 +119,9 @@ export async function getUserJobs() {
     status: j.status || "found",
     match_score: j.match_score,
     description: j.description || "",
+    location: j.location || "",
+    source_platform: j.source_platform || "",
+    found_at: j.found_at ? j.found_at.toISOString() : null,
   })) || [];
 }
 
@@ -357,6 +360,21 @@ export async function updateUserProfile(data: any) {
         reminder_time: data.reminder_time || "09:00",
       }
     });
+
+    if (data.reminder_time) {
+      const agentUrl = process.env.AGENT_SERVICE_URL || "http://localhost:8000";
+      try {
+        fetch(`${agentUrl}/agent/update-schedule`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: session.user.email,
+            reminder_time: data.reminder_time
+          })
+        }).catch(err => console.error("Failed to sync schedule with agent:", err));
+      } catch (e) {}
+    }
+
     revalidatePath("/dashboard/settings");
     return { success: true };
   } catch (err) {

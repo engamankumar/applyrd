@@ -130,11 +130,17 @@ def get_agents():
     global interview_agent, job_search_agent_instance
     global resume_agent_instance, inbox_agent, _GETTING_AGENTS
 
-    if coordinator:
+    if coordinator and job_search_agent_instance:
         return
 
     if _GETTING_AGENTS:
-        # Prevent race condition
+        # Another thread is initializing — spin-wait up to 10s instead of
+        # returning early with None agents (which causes AttributeError crashes).
+        import time
+        deadline = time.time() + 10
+        while _GETTING_AGENTS and time.time() < deadline:
+            time.sleep(0.1)
+        # After waiting, agents should be ready; return regardless.
         return
 
     _GETTING_AGENTS = True
@@ -368,23 +374,30 @@ async def lifespan(app: FastAPI):
         print(f"❌ [Lifespan Error] Scheduler failed: {e}", flush=True)
     
     # NEW: Smart Per-User Scheduling!
+    import pytz
     conn = get_db_connection()
     if conn:
         cur = conn.cursor()
-        cur.execute('SELECT id, email, reminder_time FROM "User" WHERE reminder_time IS NOT NULL')
+        cur.execute('SELECT id, email, reminder_time, preferred_roles, location_preference FROM "User" WHERE reminder_time IS NOT NULL')
         users = cur.fetchall()
         for user in users:
             try:
                 # Format: "HH:MM" -> hour=H, minute=M
                 h, m = map(int, user['reminder_time'].split(':'))
+                role = (user.get('preferred_roles') or ["Software Engineer"])[0]
+                location = user.get('location_preference') or "Remote"
+                prefs = {"preferred_roles": [role], "location_preference": location}
                 # Create a persistent CRON job for this exact user!
+                # NOTE: access_token is NOT stored here — daily_sweep will
+                # self-fetch the refresh_token from DB at fire time.
                 scheduler.add_job(
                     daily_sweep, 
                     'cron', 
                     hour=h, 
                     minute=m, 
+                    timezone=pytz.timezone('Asia/Kolkata'),
                     id=f"briefing_{user['id']}",
-                    args=[{"user_id": user['id'], "user_email": user['email']}],
+                    args=[{"user_id": user['id'], "user_email": user['email'], "preferences": prefs}],
                     replace_existing=True,
                     misfire_grace_time=3600 # Catch up if server was down!
                 )
@@ -479,6 +492,58 @@ async def heartbeat():
     log("💓 [Manual Heartbeat] Waking up the agent engine...")
     await agentic_schedule_executor()
     return {"status": "success", "message": "Heartbeat triggered. Checking for notifications now!"}
+
+@app.post("/agent/update-schedule")
+async def update_schedule(request: Dict):
+    """Dynamically update a user's briefing schedule without server restart"""
+    email = request.get("email")
+    reminder_time = request.get("reminder_time")
+    
+    if not email or not reminder_time:
+        return {"status": "error", "message": "Missing email or reminder_time"}
+        
+    try:
+        conn = get_db_connection()
+        user_id = None
+        if conn:
+            cur = conn.cursor()
+            # Also fetch preferred_roles so we can pass them into the sweep args
+            cur.execute('SELECT id, preferred_roles, location_preference FROM "User" WHERE email = %s', (email,))
+            u_row = cur.fetchone()
+            if u_row:
+                user_id = u_row['id']
+                role = (u_row.get('preferred_roles') or ["Software Engineer"])[0]
+                location = u_row.get('location_preference') or "Remote"
+            cur.close()
+            conn.close()
+            
+        if not user_id:
+            return {"status": "error", "message": "User not found."}
+            
+        import pytz
+        h, m = map(int, reminder_time.split(':'))
+        
+        prefs = {"preferred_roles": [role], "location_preference": location}
+
+        # Replace the existing job with the new time.
+        # NOTE: access_token is intentionally NOT stored here — daily_sweep will
+        # self-fetch the refresh_token from DB at fire time to get a fresh token.
+        scheduler.add_job(
+            daily_sweep, 
+            'cron', 
+            hour=h, 
+            minute=m, 
+            timezone=pytz.timezone('Asia/Kolkata'),
+            id=f"briefing_{user_id}",
+            args=[{"user_id": user_id, "user_email": email, "preferences": prefs}],
+            replace_existing=True,
+            misfire_grace_time=3600
+        )
+        log(f"⏰ [Scheduler] dynamically updated briefing for {email} to {reminder_time} IST.")
+        return {"status": "success", "message": f"Updated schedule for {email}"}
+    except Exception as e:
+        log(f"❌ [Scheduler Update Error] {e}")
+        return {"status": "error", "message": str(e)}
 
 @app.delete("/agent/reset-jobs")
 async def reset_jobs(email: str = Query(...)):
@@ -753,13 +818,18 @@ async def parse_resume(file: UploadFile = File(...)):
         return {"status": "error", "message": f"Gemini returned unparseable response: {str(e)}"}
 
 @app.post("/agent/search-jobs")
-async def search_jobs(request: JobSearchRequest, resume_text: str = "Sample Resume",user_msg: str=''):
+async def search_jobs(request: JobSearchRequest, resume_text: str = "Sample Resume", user_msg: str = ''):
+    get_agents()
+    if job_search_agent_instance is None:
+        print("❌ [search_jobs] job_search_agent_instance is None after get_agents() — agent init likely failed.")
+        return {"status": "error", "message": "Job search agent not initialized. Check startup logs."}
     prefs_dict = request.preferences.dict() if request.preferences else {}
     if not prefs_dict.get("preferred_roles"): prefs_dict["preferred_roles"] = ["Software Engineer"]
     try:
-        jobs = await job_search_agent_instance.search_and_score(prefs_dict, resume_text,user_msg)
+        jobs = await job_search_agent_instance.search_and_score(prefs_dict, resume_text, user_msg)
         if jobs: return {"status": "success", "jobs": jobs}
-    except Exception as e: print("JobSearchAgent Error:", e)
+    except Exception as e:
+        print("JobSearchAgent Error:", e)
     return {"status": "error", "message": "Search engine offline"}
 
 @app.post("/agent/generate-cover-letter")
@@ -1238,8 +1308,11 @@ async def daily_sweep(request: any, silent: bool = False):
             print(f"⚠️ [Sweep] Resume fetch failed: {e}")
 
     # 1. Discover New Jobs using REAL resume
+    # Pass the actual preferred role as user_msg so ScrapingDog/Gemini search
+    # for the right role instead of always defaulting to 'Software Engineer'.
+    sweep_role = (preferences.get("preferred_roles") or ["Software Engineer"])[0]
     search_req = JobSearchRequest(preferences=preferences)
-    search_res = await search_jobs(search_req, resume_text=resume_text)
+    search_res = await search_jobs(search_req, resume_text=resume_text, user_msg=sweep_role)
     
     if search_res.get("status") != "success":
         return search_res
@@ -1268,8 +1341,8 @@ async def daily_sweep(request: any, silent: bool = False):
                     import uuid
                     job_id = str(uuid.uuid4())
                     cur.execute("""
-                        INSERT INTO "Job" (id, user_id, title, company, location, description, apply_url, match_score, match_reason, status)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'found')
+                        INSERT INTO "Job" (id, user_id, title, company, location, description, apply_url, match_score, match_reason, status, source_platform, found_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'found', 'daily_sweep', NOW())
                     """, (job_id, user_id, job['title'], job['company'], job.get('location', 'Remote'), job.get('jd', ''), job.get('apply_url', ''), job.get('matchScore', 0), job.get('matchReason', '')))
                     saved_count += 1
                 conn.commit()
@@ -1368,6 +1441,45 @@ async def daily_sweep(request: any, silent: bool = False):
     if silent:
         log(f"🤫 [Daily Sweep] {user_email}: Skipping email dispatch (Silent Mode).")
         return {"status": "success", "summary": f"Found {len(found_jobs)} jobs. Dashboard updated (Silent Mode)."}
+
+    # SELF-HEALING TOKEN FETCH: If the cron job didn't pass an access_token
+    # (which is normal — tokens expire anyway), fetch the refresh_token from DB
+    # and exchange it for a fresh access_token right before sending.
+    if not access_token and user_id:
+        try:
+            conn = get_db_connection()
+            if conn:
+                cur = conn.cursor()
+                cur.execute('SELECT refresh_token FROM "User" WHERE id = %s', (user_id,))
+                row = cur.fetchone()
+                db_refresh = row.get('refresh_token') if row else None
+                cur.close()
+                conn.close()
+
+                if db_refresh:
+                    log(f"🔑 [Sweep Email] No access_token provided — refreshing via DB refresh_token for {user_email}")
+                    import httpx as _httpx
+                    async with _httpx.AsyncClient() as _client:
+                        token_res = await _client.post(
+                            "https://oauth2.googleapis.com/token",
+                            data={
+                                "client_id": os.getenv("GOOGLE_CLIENT_ID"),
+                                "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
+                                "refresh_token": db_refresh,
+                                "grant_type": "refresh_token"
+                            }
+                        )
+                        new_tokens = token_res.json()
+                        access_token = new_tokens.get("access_token")
+                        if access_token:
+                            log(f"✅ [Sweep Email] Fresh access_token obtained for {user_email}")
+                        else:
+                            log(f"⚠️ [Sweep Email] Token refresh returned no access_token: {new_tokens}")
+        except Exception as tok_err:
+            log(f"⚠️ [Sweep Email] Failed to self-fetch access_token: {tok_err}")
+
+    if not access_token:
+        log(f"⚠️ [Sweep Email] No valid token available for {user_email} — email will be sent in simulation mode.")
 
     res = await call_gmail_mcp("send_gmail", {
         "recipient": user_email,
@@ -1553,33 +1665,50 @@ async def sync_gmail_inbox(user_id: str, user_email: str, access_token: str, sil
                 
                 if not job_row:
                     job_id = str(uuid.uuid4())
-                    init_status = 'found' 
+                    # ALL Gmail-sourced jobs start in the Gmail Inbox pipeline ('inbox_lead').
+                    # Only override if we have confirmed evidence of a downstream status.
+                    init_status = 'inbox_lead'
                     if cls == 'application_confirmation': init_status = 'applied'
-                    elif cls == 'interview_invite': init_status = 'interview_scheduled'
-                    elif cls == 'status_update': init_status = 'responded'
-                    elif cls == 'rejection': init_status = 'rejected'
-                    elif cls == 'invitation_to_apply': init_status = 'inbox_lead' 
-                    
-                    db_safe_app_status = init_status
-                    if init_status == 'inbox_lead': db_safe_app_status = 'found'
+                    elif cls == 'interview_invite':       init_status = 'interview_scheduled'
+                    elif cls == 'status_update':          init_status = 'responded'
+                    elif cls == 'rejection':              init_status = 'rejected'
+                    # 'invitation_to_apply' and all other unknown Gmail classifications → 'inbox_lead' ✅
+
+                    db_safe_app_status = init_status  # inbox_lead IS a valid ApplicationStatus enum value
                     
                     al = res.get('apply_link', '')
                     loc = res.get('location', 'Remote')
                     sal = res.get('salary_range', '')
                     desc = res.get('description', '')
                     
-                    # AI Scoring
-                    cur.execute('SELECT id, parsed_skills FROM "Resume" WHERE user_id = %s AND is_active = TRUE LIMIT 1', (user_id,))
+                    # AI Scoring — fetch full resume for accurate matching
+                    cur.execute(
+                        'SELECT id, parsed_skills, parsed_experience FROM "Resume" WHERE user_id = %s AND is_active = TRUE LIMIT 1',
+                        (user_id,)
+                    )
                     res_row = cur.fetchone()
                     
                     match_score = 0
                     match_reason = f"Extracted from Gmail Inbox of {user_email}. Category: {cls}"
-                    if res_row and coordinator:
+                    if res_row and job_search_agent_instance:
                         try:
-                            score_res = await coordinator.score_job({"title": role, "company": company, "description": desc}, res_row.get('parsed_skills', []))
-                            match_score = score_res.get('score', 0)
-                            match_reason = score_res.get('reason', match_reason)
-                        except: pass
+                            # Build a resume text string (same format as daily_sweep)
+                            resume_parts = []
+                            skills = res_row.get('parsed_skills') or []
+                            experience = res_row.get('parsed_experience') or []
+                            if skills:
+                                resume_parts.append(f"Technical Skills: {', '.join(skills)}")
+                            if experience:
+                                resume_parts.append(f"Experience: {json.dumps(experience)}")
+                            resume_text_for_score = "\n".join(resume_parts) or "Software Engineer with full-stack experience."
+                            
+                            job_dict = {"title": role, "company": company, "jd": desc or f"{role} position at {company}"}
+                            scored = await job_search_agent_instance.score_job(job_dict, resume_text_for_score)
+                            match_score = scored.get('matchScore', 0)
+                            match_reason = scored.get('matchReason', match_reason)
+                            log(f"✅ [Inbox Score] {role} @ {company}: {match_score}%")
+                        except Exception as score_err:
+                            log(f"⚠️ [Inbox Score] Failed to score {role} @ {company}: {score_err}")
                     
                     # Save Job
                     cur.execute("""
@@ -1622,9 +1751,13 @@ async def sync_gmail_inbox(user_id: str, user_email: str, access_token: str, sil
 
 @app.post("/agent/recalculate-scores")
 async def recalculate_scores(request: Dict):
+    get_agents()  # Ensure job_search_agent_instance is initialized
     user_id = request.get("user_id")
+    rescore_all = request.get("rescore_all", False)  # Set True to force rescore everything
     if not user_id:
         return {"status": "error", "message": "user_id required"}
+    if job_search_agent_instance is None:
+        return {"status": "error", "message": "Job search agent not initialized — check startup logs."}
         
     db_url_raw = os.getenv("DATABASE_URL", "")
     db_url = db_url_raw.split("?")[0] if "?" in db_url_raw else db_url_raw
@@ -1655,8 +1788,11 @@ async def recalculate_scores(request: Dict):
         if resume_row['parsed_experience']: resume_parts.append(f"Experience: {json.dumps(resume_row['parsed_experience'])}")
         resume_text = "\n".join(resume_parts)
         
-        # 2. Get all jobs
-        cur.execute('SELECT id, title, company, description FROM "Job" WHERE user_id = %s', (user_id,))
+        # 2. Get jobs with 0 or NULL score (or all if rescore_all=True)
+        if rescore_all:
+            cur.execute('SELECT id, title, company, description FROM "Job" WHERE user_id = %s', (user_id,))
+        else:
+            cur.execute('SELECT id, title, company, description FROM "Job" WHERE user_id = %s AND (match_score IS NULL OR match_score = 0)', (user_id,))
         jobs = cur.fetchall()
         
         if not jobs:

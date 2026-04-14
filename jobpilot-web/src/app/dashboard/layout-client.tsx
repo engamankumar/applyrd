@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation"
 import {
   Search,
   Plus,
-  Bell,
   Settings,
   LogOut,
   LayoutGrid,
@@ -26,6 +25,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { NotificationBell } from "@/components/dashboard/NotificationBell"
 import { createManualJob } from "@/lib/actions/onboarding"
 import { toast } from "sonner"
 import { useState } from "react"
@@ -53,7 +53,8 @@ export default function DashboardLayout({ children, hasResume, resumeSkillCount 
 
   const handleGlobalSearch = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && searchQuery.trim()) {
-      router.push(`/dashboard/applications?q=${encodeURIComponent(searchQuery)}`)
+      // Route to dashboard with query pre-filled for the Automation orchestrator
+      router.push(`/dashboard?q=${encodeURIComponent(searchQuery)}`)
       setSearchQuery("")
     }
   }
@@ -94,7 +95,7 @@ export default function DashboardLayout({ children, hasResume, resumeSkillCount 
           <div className="relative hidden md:block">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground opacity-50" size={16} />
             <Input
-              placeholder="Inject application node..."
+              placeholder="Ask the agent anything... (Enter)"
               className="w-[300px] h-9 pl-10 bg-surface-container-low border-none rounded-lg text-sm font-bold focus-visible:ring-1 focus-visible:ring-primary/20"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -112,10 +113,7 @@ export default function DashboardLayout({ children, hasResume, resumeSkillCount 
           >
             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
           </Button>
-          <Button variant="ghost" size="icon" className="text-muted-foreground relative hover:bg-surface-container-low">
-            <Bell size={20} />
-            <div className="absolute top-2 right-2 w-2 h-2 bg-danger rounded-full border-2 border-surface-container-lowest" />
-          </Button>
+          <NotificationBell />
           <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center text-primary font-bold border border-primary/10 text-[10px] shadow-sm">
             <User size={20} />
           </div>

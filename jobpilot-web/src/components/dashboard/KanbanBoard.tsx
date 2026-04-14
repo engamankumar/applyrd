@@ -11,6 +11,22 @@ import { Button } from "@/components/ui/button";
 import { createManualJob, updateJobStatus, forceSweepInbox } from "@/lib/actions/onboarding";
 import { toast } from "sonner";
 import { Search } from "lucide-react";
+
+function formatRelativeTime(dateInput: string | Date | null | undefined): string {
+  if (!dateInput) return "Unknown";
+  const date = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
+  if (isNaN(date.getTime())) return "Unknown";
+  const diffMs = Date.now() - date.getTime();
+  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffSecs < 60) return "Just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -245,7 +261,9 @@ export default function KanbanBoard({ initialJobs = [], hasJobs = false }: { ini
                         <div className="flex items-center gap-3 text-neutral-400">
                           <div className="flex items-center gap-1">
                             <Clock size={12} />
-                            <span className="text-[10px] font-bold uppercase tracking-tight">Just Now</span>
+                            <span className="text-[10px] font-bold uppercase tracking-tight">
+                              {formatRelativeTime(job.found_at)}
+                            </span>
                           </div>
                         </div>
                         <DropdownMenu>

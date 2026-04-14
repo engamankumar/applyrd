@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Sparkles, ArrowRight, Loader2, CheckCircle2, Circle, AlertCircle, Play, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,11 +8,15 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { useOrchestrator } from "@/hooks/useOrchestrator";
+import { useSearchParams, useRouter } from "next/navigation";
 
 export default function AIAssistant() {
   const [query, setQuery] = useState("");
   const [preferences, setPreferences] = useState<any>(null);
   const { orchestrate, loading, error, steps, results, message } = useOrchestrator();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const firedRef = useRef(false);  // prevent double-fire in React StrictMode
 
   useEffect(() => {
     async function loadPrefs() {
@@ -22,6 +26,19 @@ export default function AIAssistant() {
     }
     loadPrefs();
   }, []);
+
+  // Auto-fire when header search bar sends ?q= param
+  useEffect(() => {
+    const q = searchParams.get("q");
+    if (q && !firedRef.current && !loading) {
+      firedRef.current = true;
+      setQuery(q);
+      // Strip ?q from URL so a page refresh doesn't re-fire
+      router.replace("/dashboard", { scroll: false });
+      // Small delay so query state is set before orchestrate reads it
+      setTimeout(() => orchestrate(q, { preferences }), 100);
+    }
+  }, [searchParams, preferences]); // eslint-disable-line
 
   const handleAction = () => {
     if (!query.trim()) return;

@@ -191,23 +191,132 @@ class JobSearchAgent:
             return job
 
     async def search_and_score(self, preferences: Dict, resume_text: str, user_msg: str) -> List[Dict]:
-        print('aman user_msg',user_msg)
-        role = user_msg or preferences.get("preferred_roles", ["Software Engineer"])[0]
+        print('aman user_msg', user_msg)
+        raw_role = user_msg or preferences.get("preferred_roles", ["Software Engineer"])[0]
         location = preferences.get("location_preference", "Remote")
-        
+
+        # --- Normalize shorthand role names to proper LinkedIn-searchable titles ---
+        ROLE_ALIASES = {
+            "fullstack": "Full Stack Developer",
+            "full stack": "Full Stack Developer",
+            "frontend": "Frontend Developer",
+            "front end": "Frontend Developer",
+            "front-end": "Frontend Developer",
+            "backend": "Backend Developer",
+            "back end": "Backend Developer",
+            "back-end": "Backend Developer",
+            "sde": "Software Development Engineer",
+            "swe": "Software Engineer",
+            "ml": "Machine Learning Engineer",
+            "ds": "Data Scientist",
+            "devops": "DevOps Engineer",
+        }
+
+        # --- Natural Language Query Parsing ---
+        # If user_msg is a full sentence ("Find React jobs in Bangalore"),
+        # extract the role and location rather than sending the whole sentence to ScrapingDog.
+        import re
+        KNOWN_LOCATIONS = [
+            "bangalore", "bengaluru", "mumbai", "delhi", "hyderabad", "pune", "chennai",
+            "kolkata", "remote", "new york", "san francisco", "london", "berlin",
+            "singapore", "dubai", "toronto", "sydney", "amsterdam", "paris"
+        ]
+        TECH_ROLES = [
+            "react", "angular", "vue", "node", "python", "java", "golang", "rust",
+            "flutter", "swift", "kotlin", "django", "fastapi", "spring", "tensorflow",
+            "pytorch", "data science", "machine learning", "ai", "blockchain",
+            "full stack", "frontend", "backend", "devops", "cloud", "aws", "gcp",
+            "android", "ios", "mobile", "embedded", "firmware"
+        ]
+        FILLER_WORDS = r"\b(find|search|get|show|look for|want|need|give me|bring me|i want|please|me|some|new|latest|good|best|top)\b"
+
+        msg_lower = raw_role.lower().strip()
+        is_sentence = len(msg_lower.split()) > 3 or any(
+            w in msg_lower for w in ["find", "search", "get", "show", "look", "want", "jobs in", "roles in"]
+        )
+
+        if is_sentence:
+            # Extract location from the sentence
+            for loc in KNOWN_LOCATIONS:
+                if loc in msg_lower:
+                    location = loc.title()  # "bangalore" → "Bangalore"
+                    break
+
+            # Strip filler words to isolate the role keyword
+            cleaned = re.sub(FILLER_WORDS, "", msg_lower, flags=re.IGNORECASE)
+            cleaned = re.sub(r"\b(jobs?|roles?|positions?|openings?|opportunities?)\b", "", cleaned, flags=re.IGNORECASE)
+            # Strip the extracted location from the role string
+            if location and location.lower() in cleaned:
+                cleaned = cleaned.replace(location.lower(), "")
+            cleaned = re.sub(r"\b(in|at|for|near|around|within|from)\b", "", cleaned).strip()
+            cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+            # Match against known tech role keywords → map to proper title
+            extracted_role = None
+            for tech in sorted(TECH_ROLES, key=len, reverse=True):  # longest match first
+                if tech in cleaned:
+                    normalized_tech = tech.title()
+                    # Map common tech to proper job titles
+                    TECH_TO_TITLE = {
+                        "React": "React Developer",
+                        "Angular": "Angular Developer",
+                        "Vue": "Vue.js Developer",
+                        "Node": "Node.js Developer",
+                        "Python": "Python Developer",
+                        "Java": "Java Developer",
+                        "Golang": "Golang Developer",
+                        "Rust": "Rust Developer",
+                        "Flutter": "Flutter Developer",
+                        "Swift": "iOS Developer",
+                        "Kotlin": "Android Developer",
+                        "Data Science": "Data Scientist",
+                        "Machine Learning": "Machine Learning Engineer",
+                        "Ai": "AI Engineer",
+                        "Devops": "DevOps Engineer",
+                        "Aws": "AWS Cloud Engineer",
+                        "Gcp": "GCP Cloud Engineer",
+                        "Full Stack": "Full Stack Developer",
+                        "Frontend": "Frontend Developer",
+                        "Backend": "Backend Developer",
+                        "Mobile": "Mobile App Developer",
+                        "Android": "Android Developer",
+                        "Ios": "iOS Developer",
+                        "Cloud": "Cloud Engineer",
+                        "Blockchain": "Blockchain Developer",
+                        "Embedded": "Embedded Systems Engineer",
+                        "Firmware": "Firmware Engineer",
+                    }
+                    extracted_role = TECH_TO_TITLE.get(normalized_tech, f"{normalized_tech} Developer")
+                    break
+
+            if extracted_role:
+                raw_role = extracted_role
+                print(f"🧠 [NLP Parse] Extracted role='{raw_role}', location='{location}' from: '{user_msg}'")
+            elif cleaned.strip():
+                # Use whatever's left after stripping fillers as the role
+                raw_role = cleaned.strip().title()
+                print(f"🧠 [NLP Parse] Cleaned role='{raw_role}', location='{location}' from: '{user_msg}'")
+
+        role = ROLE_ALIASES.get(raw_role.strip().lower(), raw_role)
+        print(f"🔍 [JobSearch] Searching for: '{role}' in '{location}'")
+
         raw_jobs = []
-        
-        # Step 1: Discover Jobs from Live APIs first
+
+        # Step 1a: Try ScrapingDog (LinkedIn)
         raw_jobs = self._fetch_from_scrapingdog(role, location)
-            
+
+        # Step 1b: If ScrapingDog returned nothing, try RapidAPI (JSearch)
         if not raw_jobs:
-            # Check if key is even there
             sd_key = os.getenv("SCRAPINGDOG_API_KEY")
             if not sd_key:
-                print("⚠️ [Search API] SCRAPINGDOG_API_KEY is missing in .env. Using Gemini Brain for job discovery.")
+                print("⚠️ [Search API] SCRAPINGDOG_API_KEY missing. Trying RapidAPI...")
             else:
-                print(f"ℹ️ [Search API] Live search for '{role}' returned 0 results. Falling back to Gemini Intelligence.")
-            
+                print(f"ℹ️ [Search API] ScrapingDog returned 0 for '{role}'. Trying RapidAPI...")
+            raw_jobs = self._fetch_from_rapidapi(role, location)
+
+        # Step 1c: Both APIs empty — fall back to Gemini intelligence
+        if not raw_jobs:
+            print(f"ℹ️ [Search API] All live APIs returned 0 results for '{role}'. Falling back to Gemini Intelligence.")
             discovery_prompt = f"""
             You are a Job Search Agent. Based on the user's preferred role '{role}' and location '{location}', 
             generate 5 realistic, high-quality job opportunities that currently exist in the market (e.g. at companies like Google, Stripe, Zomato, etc.)
@@ -252,6 +361,7 @@ class JobSearchAgent:
                     }
                 ]
         
+
         # Step 1.5: Patch Missing/Short JDs with Contextually Generated Realism
         try:
             # Identify jobs that genuinely need a description patch
